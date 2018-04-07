@@ -15,26 +15,23 @@
 
 {$ifdef read_interface}
 
-  { Abstract ancestor for containers that pack children,
+  { Abstract ancestor for containers that adjust their size to children,
     like @link(TCastleHorizontalGroup) and @link(TCastleVerticalGroup). }
   TCastlePackedGroup = class(TUIControl)
   strict private
     FFrame: boolean;
     FFrameColor: TCastleColor;
     FPadding: Single;
-    FSpacing: Single;
     FInsideWidth, FInsideHeight: Single;
     procedure SetFrameColor(const Value: TCastleColor);
     procedure SetFrame(const Value: boolean);
     procedure SetPadding(const Value: Single);
-    procedure SetSpacing(const Value: Single);
   strict protected
     FPackingValid: boolean;
     procedure DoPackChildren(out InsideWidth, InsideHeight: Single); virtual; abstract;
   public
     const
       DefaultPadding = 10;
-      DefaultSpacing = 10;
 
     constructor Create(AOwner: TComponent); override;
     function Rect: TRectangle; override;
@@ -47,7 +44,40 @@
     { If @link(Frame), this is the frame's color. By default white. }
     property FrameColor: TCastleColor read FFrameColor write SetFrameColor;
     property Padding: Single read FPadding write SetPadding default DefaultPadding;
-    property Spacing: Single read FSpacing write SetSpacing default DefaultSpacing;
+  end;
+
+  { Container that has automatically calculated size to tightly surround
+    children. The children are not repositioned in any way.
+
+    Note that the @link(Padding), if you set it non-zero,
+    determines a margin that will be automatically added to the right and top.
+    But you have to manually make it valid also at the left and bottom,
+    that is: you have to position all children to leave empty Padding
+    space at left and bottom. }
+
+  { TODO: hm, this only makes sense if children are only anchored to left/bottom,
+    otherwise the calculation is necessarily recursive
+    (child C.CalculatedFloatRect depends on our own size,
+    and our size depends on C.CalculatedFloatRect).
+
+    Also, right now, in TUIControl.FloatRectWithAnchors,
+    we always look at ParentFloatRect even for anchor hpLeft/vpBottom. }
+  TCastleAutoSizeGroup = class(TCastlePackedGroup)
+  strict private
+    FForcedWidth: Integer;
+    FForcedHeight: Integer;
+  strict protected
+    procedure DoPackChildren(out W, H: Single); override;
+  public
+    constructor Create(AOwner: TComponent); override;
+    property Padding default 0;
+
+    { This is a hack to keep TCastleScrollView.ScrollArea API compatible.
+      @exclude }
+    property Width: Integer read FForcedWidth write FForcedWidth;
+      deprecated 'do not set TCastleScrollView.ScrollArea.Width, it is better to leave it automatically calculated now';
+    property Height: Integer read FForcedHeight write FForcedHeight;
+      deprecated 'do not set TCastleScrollView.ScrollArea.Height, it is better to leave it automatically calculated now';
   end;
 
   { Container that packs the children horizontally.
@@ -56,15 +86,21 @@
     in the order determined by their back-to-front relation.
     E.g. if you add all the children using @link(InsertFront),
     then they will appear in the same order, left-to-right, in the control.
-    You can invert this by setting @link(LeftToRight) to @false. }
+    You can invert this by setting @link(LeftToRight) to @false.
+
+    The size of this control is automatically adjusted to children. }
   TCastleHorizontalGroup = class(TCastlePackedGroup)
   strict private
     FAlignment: TVerticalPosition;
     FLeftToRight: boolean;
+    FSpacing: Single;
     procedure SetLeftToRight(const Value: boolean);
+    procedure SetSpacing(const Value: Single);
   strict protected
     procedure DoPackChildren(out W, H: Single); override;
   public
+    const
+      DefaultSpacing = 10;
     constructor Create(AOwner: TComponent); override;
   published
     { The alignment of children inside this control. }
@@ -72,6 +108,7 @@
       read FAlignment write FAlignment default vpMiddle;
     property LeftToRight: boolean read FLeftToRight write SetLeftToRight
       default true;
+    property Spacing: Single read FSpacing write SetSpacing default DefaultSpacing;
   end;
 
   { Container that packs the children vertically.
@@ -80,15 +117,21 @@
     in the order determined by their back-to-front relation.
     E.g. if you add all the children using @link(InsertFront),
     then they will appear in the same order, top-to-bottom, in the control.
-    You can invert this by setting @link(TopToBottom) to @false. }
+    You can invert this by setting @link(TopToBottom) to @false.
+
+    The size of this control is automatically adjusted to children. }
   TCastleVerticalGroup = class(TCastlePackedGroup)
   strict private
     FAlignment: THorizontalPosition;
     FTopToBottom: boolean;
+    FSpacing: Single;
     procedure SetTopToBottom(const Value: boolean);
+    procedure SetSpacing(const Value: Single);
   strict protected
     procedure DoPackChildren(out W, H: Single); override;
   public
+    const
+      DefaultSpacing = 10;
     constructor Create(AOwner: TComponent); override;
   published
     { The alignment of children inside this control. }
@@ -96,6 +139,7 @@
       read FAlignment write FAlignment default hpMiddle;
     property TopToBottom: boolean read FTopToBottom write SetTopToBottom
       default true;
+    property Spacing: Single read FSpacing write SetSpacing default DefaultSpacing;
   end;
 
 {$endif read_interface}
@@ -109,7 +153,6 @@ begin
   inherited;
   FFrameColor := White;
   FPadding := DefaultPadding;
-  FSpacing := DefaultSpacing;
 end;
 
 procedure TCastlePackedGroup.Render;
@@ -168,21 +211,44 @@ begin
   end;
 end;
 
-procedure TCastlePackedGroup.SetSpacing(const Value: Single);
-begin
-  if FSpacing <> Value then
-  begin
-    FSpacing := Value;
-    VisibleChange([chRectangle]);
-  end;
-end;
-
 procedure TCastlePackedGroup.VisibleChange(const Changes: TUIControlChanges;
   const ChangeInitiatedByChildren: boolean);
 begin
   inherited;
   if [chRectangle, chChildren] * Changes <> [] then
     FPackingValid := false;
+end;
+
+{ TCastleAutoSizeGroup ------------------------------------------------------- }
+
+constructor TCastleAutoSizeGroup.Create(AOwner: TComponent);
+begin
+  inherited;
+  Padding := 0;
+end;
+
+procedure TCastleAutoSizeGroup.DoPackChildren(out W, H: Single);
+var
+  R: TFloatRectangle;
+  C: TUIControl;
+  I: Integer;
+begin
+  W := Padding;
+  H := Padding;
+  for I := 0 to ControlsCount - 1 do
+  begin
+    C := Controls[I];
+    if not C.GetExists then Continue;
+
+    R := C.CalculatedFloatRect;
+    W := Max(W, R.Right);
+    H := Max(H, R.Top);
+  end;
+  W := W + Padding;
+  H := H + Padding;
+
+  if FForcedWidth  <> 0 then W := FForcedWidth;
+  if FForcedHeight <> 0 then H := FForcedHeight;
 end;
 
 { TCastleHorizontalGroup ----------------------------------------------------- }
@@ -192,6 +258,7 @@ begin
   inherited;
   FAlignment := vpMiddle;
   FLeftToRight := true;
+  FSpacing := DefaultSpacing;
 end;
 
 procedure TCastleHorizontalGroup.SetLeftToRight(const Value: boolean);
@@ -238,6 +305,15 @@ begin
   H := H + 2 * Padding;
 end;
 
+procedure TCastleHorizontalGroup.SetSpacing(const Value: Single);
+begin
+  if FSpacing <> Value then
+  begin
+    FSpacing := Value;
+    VisibleChange([chRectangle]);
+  end;
+end;
+
 { TCastleVerticalGroup ----------------------------------------------------- }
 
 constructor TCastleVerticalGroup.Create(AOwner: TComponent);
@@ -245,6 +321,7 @@ begin
   inherited;
   FAlignment := hpMiddle;
   FTopToBottom := true;
+  FSpacing := DefaultSpacing;
 end;
 
 procedure TCastleVerticalGroup.SetTopToBottom(const Value: boolean);
@@ -289,6 +366,15 @@ begin
 
   W := W + 2 * Padding;
   H := H - Spacing + Padding;
+end;
+
+procedure TCastleVerticalGroup.SetSpacing(const Value: Single);
+begin
+  if FSpacing <> Value then
+  begin
+    FSpacing := Value;
+    VisibleChange([chRectangle]);
+  end;
 end;
 
 {$endif read_implementation}

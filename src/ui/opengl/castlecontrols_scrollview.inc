@@ -15,6 +15,8 @@
 
 {$ifdef read_interface}
 
+  TCastleAutoSizeGroup = class;
+
   { Children added to @link(ScrollArea) can be scrolled vertically.
     We automatically show a scrollbar, and handle various scrolling inputs
     to be functional on both desktops and mobile
@@ -22,7 +24,7 @@
     dragging the whole area - see @link(EnableDragging)). }
   TCastleScrollView = class(TUIControlSizeable)
   strict private
-    FScrollArea: TUIControlSizeable;
+    FScrollArea: TCastleAutoSizeGroup;
     Scissor: TScissor;
 
     FScroll: Single;
@@ -74,9 +76,8 @@
     property TintScrollBarInactive: TCastleColor read FTintScrollBarInactive write FTintScrollBarInactive;
   published
     { Children you add here will be scrolled.
-      Make sure to add some children here, and set proper size of this control,
-      to have a useful scrolling area. }
-    property ScrollArea: TUIControlSizeable read FScrollArea;
+      Make sure to add some children here. }
+    property ScrollArea: TCastleAutoSizeGroup read FScrollArea;
     { Speed of scrolling by keys, in pixels (before UI scaling) per second. }
     property KeyScrollSpeed: Single read FKeyScrollSpeed write FKeyScrollSpeed default DefaultKeyScrollSpeed;
     { Speed of scrolling by mouse wheel, in pixels (before UI scaling) per event. }
@@ -105,7 +106,7 @@ begin
   FScrollBarWidth := DefaultScrollBarWidth;
   FTintScrollBarInactive := White;
 
-  FScrollArea := TUIControlSizeable.Create(Self);
+  FScrollArea := TCastleAutoSizeGroup.Create(Self);
   FScrollArea.SetSubComponent(true);
   FScrollArea.Name := 'ScrollArea';
   FScrollArea.Anchor(vpTop);
