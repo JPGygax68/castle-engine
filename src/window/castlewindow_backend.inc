@@ -22,6 +22,12 @@
   {$I castlewindow_gtk.inc}
 {$endif}
 
+{$INFO before DISPMANX}
+{$ifdef CASTLE_WINDOW_DISPMANX}
+  {$INFO DISPMANX}
+  {$I castlewindow_dispmanx.inc}
+{$endif}
+
 {$ifdef CASTLE_WINDOW_USE_XF86VMODE}
   {$I castlewindow_xf86vmode.inc}
 {$endif CASTLE_WINDOW_USE_XF86VMODE}

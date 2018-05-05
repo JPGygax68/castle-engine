@@ -289,6 +289,9 @@ unit CastleWindow;
   CASTLE_WINDOW_ANDROID
     Initialize OpenGL context using EGL on Android.
 
+  CASTLE_WINDOW_DISPMANX
+    EXPERIMENTAL, intended for Raspberry Pi without X.
+
   CASTLE_WINDOW_LIBRARY
     Use existing OpenGL context.
     This is useful when the engine is used as a library (see src/library/),
@@ -340,52 +343,54 @@ unit CastleWindow;
    {$ifndef CASTLE_WINDOW_TEMPLATE}
     {$ifndef CASTLE_WINDOW_LCL}
      {$ifndef CASTLE_WINDOW_ANDROID}
-      {$ifndef CASTLE_WINDOW_LIBRARY}
+      {$ifndef CASTLE_WINDOW_DISPMANX}
+        {$ifndef CASTLE_WINDOW_LIBRARY}
 
-       // PasDoc cannot handle "$if defined(xxx)" for now, workaround below
-       {$ifdef PASDOC}
-         {$define CASTLE_WINDOW_GTK_2}
-       {$else}
+         // PasDoc cannot handle "$if defined(xxx)" for now, workaround below
+         {$ifdef PASDOC}
+           {$define CASTLE_WINDOW_GTK_2}
+         {$else}
 
-         {$if defined(MSWINDOWS)}
-           // various possible backends on Windows:
-           {$define CASTLE_WINDOW_WINAPI} // best (looks native and most functional) on Windows
-           { $define CASTLE_WINDOW_GTK_2}
-           { $define CASTLE_WINDOW_LCL}
-           { $define CASTLE_WINDOW_LIBRARY}
-           { $define CASTLE_WINDOW_TEMPLATE} // only useful for developers
-         {$elseif defined(UNIX)}
-           {$if defined(ANDROID)}
-             {$define CASTLE_WINDOW_ANDROID}
-           {$elseif defined(IOS)}
-             {$define CASTLE_WINDOW_LIBRARY}
-             {$info Compiling CastleWindow with CASTLE_WINDOW_LIBRARY backend on iOS}
-           {$elseif defined(DARWIN)}
-             // various possible backends on macOS (desktop):
-             {$define CASTLE_WINDOW_XLIB} // easiest to compile
-             { $define CASTLE_WINDOW_LCL} // best (looks native and most functional) on macOS, but requires LCL
+           {$if defined(MSWINDOWS)}
+             // various possible backends on Windows:
+             {$define CASTLE_WINDOW_WINAPI} // best (looks native and most functional) on Windows
              { $define CASTLE_WINDOW_GTK_2}
-             { $define CASTLE_WINDOW_LIBRARY}
-             { $define CASTLE_WINDOW_TEMPLATE} // only useful for developers
-           {$elseif defined(CASTLE_ENGINE_PLUGIN)}
-             // on Unix plugin, you have to use Xlib
-             {$define CASTLE_WINDOW_XLIB}
-           {$elseif defined(OpenGLES)}
-             // when testing OpenGLES on desktop, the GTK2 backend cannot be used
-             {$define CASTLE_WINDOW_XLIB}
-           {$else}
-             // various possible backends on traditional Unix (Linux, FreeBSD) desktop:
-             {$define CASTLE_WINDOW_GTK_2} // best (looks native and most functional)
-             { $define CASTLE_WINDOW_XLIB}
              { $define CASTLE_WINDOW_LCL}
              { $define CASTLE_WINDOW_LIBRARY}
              { $define CASTLE_WINDOW_TEMPLATE} // only useful for developers
-           {$endif}
-         {$endif} // end of UNIX possibilities
+           {$elseif defined(UNIX)}
+             {$if defined(ANDROID)}
+               {$define CASTLE_WINDOW_ANDROID}
+             {$elseif defined(IOS)}
+               {$define CASTLE_WINDOW_LIBRARY}
+               {$info Compiling CastleWindow with CASTLE_WINDOW_LIBRARY backend on iOS}
+             {$elseif defined(DARWIN)}
+               // various possible backends on macOS (desktop):
+               {$define CASTLE_WINDOW_XLIB} // easiest to compile
+               { $define CASTLE_WINDOW_LCL} // best (looks native and most functional) on macOS, but requires LCL
+               { $define CASTLE_WINDOW_GTK_2}
+               { $define CASTLE_WINDOW_LIBRARY}
+               { $define CASTLE_WINDOW_TEMPLATE} // only useful for developers
+             {$elseif defined(CASTLE_ENGINE_PLUGIN)}
+               // on Unix plugin, you have to use Xlib
+               {$define CASTLE_WINDOW_XLIB}
+             {$elseif defined(OpenGLES)}
+               // when testing OpenGLES on desktop, the GTK2 backend cannot be used
+               {$define CASTLE_WINDOW_XLIB}
+             {$else}
+               // various possible backends on traditional Unix (Linux, FreeBSD) desktop:
+               {$define CASTLE_WINDOW_GTK_2} // best (looks native and most functional)
+               { $define CASTLE_WINDOW_XLIB}
+               { $define CASTLE_WINDOW_LCL}
+               { $define CASTLE_WINDOW_LIBRARY}
+               { $define CASTLE_WINDOW_TEMPLATE} // only useful for developers
+             {$endif}
+           {$endif} // end of UNIX possibilities
 
-       {$endif} // end of "not PasDoc"
+         {$endif} // end of "not PasDoc"
 
-      {$endif}
+        {$endif} // CASTLE_WINDOW_LIBRARY
+      {$endif} // CASTLE_WINDOW_DISPMANX
      {$endif}
     {$endif}
    {$endif}
