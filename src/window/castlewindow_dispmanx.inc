@@ -4,7 +4,11 @@
   ----------------------------------------------------------------------------
 }
 
+// TODO: the following probably needs to be properly wrapped into conditional blocks
+//  {$linklib 'bcm_host'}
+
 {$ifdef read_interface_uses}
+dispmanx,
 {$endif}
 
 {$ifdef read_implementation_uses}
