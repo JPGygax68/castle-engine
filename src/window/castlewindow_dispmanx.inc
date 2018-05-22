@@ -14,6 +14,8 @@
 }
 
 {$ifdef read_interface_uses}
+// The following two imports do nor really belong in the interface part, but 
+// must be here because cthreads must be initialized early.
 {$ifdef unix}
   cthreads,
   cmem, // the c memory manager is on some systems much faster for multi-threading
@@ -34,6 +36,7 @@ private
   dispman_display: DISPMANX_DISPLAY_HANDLE_T;
 
   procedure InitDispmanX;
+  procedure InitEGL;
 {$endif read_window_interface}
 
 {$ifdef read_application_interface}
@@ -89,11 +92,66 @@ begin
   WritelnLog('DispmanX', 'done.');
 end;
 
+procedure TCastleWindowCustom.InitEGL;
+const
+  config_attribs: array[0..10] of EGLint = (
+    EGL_RED_SIZE, 8,
+    EGL_GREEN_SIZE, 8,
+    EGL_BLUE_SIZE, 8,
+    EGL_ALPHA_SIZE, 8,
+    EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+    EGL_NONE
+  );
+  context_attribs: array[0..2] of EGLint = (
+    EGL_CONTEXT_CLIENT_VERSION, 2,
+    EGL_NONE
+  );
+var
+  Res: EGLboolean;
+  Major, Minor: EGLint;
+  num_configs: EGLint;
+  //configs: array of EGLConfig;
+begin
+  WritelnLog('DispmanX', 'Obtaining EGL default "display".');
+  display := eglGetDisplay(EGL_DEFAULT_DISPLAY);
+  if display = nil then raise Exception.Create('Failed to obtain EGL default display');
+
+  WritelnLog('DispmanX', 'Initializing EGL display connection...');
+  Res := eglInitialize(display, @Major, @Minor);
+  if Res = EGL_FALSE then raise Exception.Create('Failed to initialize the EGL display');
+  WritelnLog('DispmanX', 'done, EGL version is %d.%d', [Major, Minor]);
+
+  {$ifdef NOT_DEFINED}
+  WritelnLog('DispmanX', 'Obtaining EGL display configs...');
+  eglGetConfigs(display, nil, 0, @num_configs);
+  // TODO: abort if num_configs = 0
+  SetLength(configs, num_configs);
+  eglGetConfigs(display, @configs, num_configs, @num_configs);
+  WritelnLog('DispmanX', 'obtained %d configs', [num_configs]);
+  {$endif}
+
+  WritelnLog('DispmanX', 'Choosing a display config...');
+  Res := eglChooseConfig(display, @config_attribs, @config, 1, @num_configs);
+  if Res <> EGL_TRUE then raise Exception.Create('Failed to choose a display configuration');
+  WritelnLog('done.');
+
+  WritelnLog('Binding the OpenGL ES API...');
+  Res := eglBindAPI(EGL_OPENGL_ES_API);
+  if Res <> EGL_TRUE then raise Exception.Create('Failed to bind OpenGL ES API');
+  WritelnLog('done.');
+
+  WritelnLog('Creating EGL context...');
+  context := eglCreateContext(display, config, EGL_NO_CONTEXT, @context_attribs);
+  if context = nil then raise Exception.Create('Failed to create EGL context');
+  WritelnLog('done.');
+end;
+
 { Standard methods }
 
 procedure TCastleWindowCustom.CreateBackend;
 begin
   InitDispmanX;
+  InitEGL;
   { TODO (initialize backend-specific per-window stuff; may do nothing) }
 end;
 
