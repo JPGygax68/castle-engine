@@ -20,7 +20,7 @@
   cthreads,
   cmem, // the c memory manager is on some systems much faster for multi-threading
 {$endif}
-DispmanX, EGL, VC4,
+DispmanX, VC4, // EGL, // NOTE: trying to use CGE's built-in EGL declarations right now
 {$endif}
 
 {$ifdef read_implementation_uses}
@@ -34,12 +34,17 @@ private
   config : EGLConfig;
   native_window: EGL_DISPMANX_WINDOW_T;
   dispman_display: DISPMANX_DISPLAY_HANDLE_T;
+  window_width, window_height: Integer;
 
   procedure InitDispmanX;
   procedure InitEGL;
+  procedure EGLFromDispmanX;
 {$endif read_window_interface}
 
 {$ifdef read_application_interface}
+private
+  screen_width, screen_height: UInt32;
+  procedure InitDispmanX;
 {$endif read_application_interface}
 
 {$ifdef read_implementation}
@@ -50,36 +55,27 @@ private
 
 procedure TCastleWindowCustom.InitDispmanX;
 var
-  screen_width, screen_height: UInt32;
   dispman_element: DISPMANX_ELEMENT_HANDLE_T;
   dispman_update: DISPMANX_UPDATE_HANDLE_T;
-  success: Int32;
   src_rect, dst_rect: VC_RECT_T;
 begin
 
-  WritelnLog('DispmanX', 'Initializing BCM host...');
-  BCMHostInit;
-  WritelnLog('DispmanX', 'done.');
-
-  WritelnLog('DispmanX', 'Obtaining LCD display size...');
-  success := BCMHostGraphicsGetDisplaySize(0 {LCD}, screen_width, screen_height);
-  if success < 0 then raise Exception.Create('Failed to obtain LCD display size');
-  WritelnLog('DispmanX', '%dx%d', [screen_width, screen_height]);
+  //Application.InitDispmanX;
 
   WritelnLog('DispmanX', 'Opening Dispman display...');
   dispman_display := vc_dispmanx_display_open(0 {LCD});
   if dispman_display = 0 then raise Exception.Create('Failed to open dispman display');
-  WritelnLog('done.');
+  WritelnLog('DispmanX', 'done.');
 
   WritelnLog('DispmanX', 'Creating Dispman window from display...');
   dst_rect.x := 0;
   dst_rect.y := 0;
-  dst_rect.width  := screen_width;
-  dst_rect.height := screen_height;
+  dst_rect.width  := Application.ScreenWidth;
+  dst_rect.height := Application.ScreenHeight;
   src_rect.x := 0;
   src_rect.y := 0;
-  src_rect.width  := screen_width  shl 16;
-  src_rect.height := screen_height shl 16;
+  src_rect.width  := Application.ScreenWidth  shl 16;
+  src_rect.height := Application.ScreenHeight shl 16;
   dispman_update := vc_dispmanx_update_start(0);
   if dispman_update = 0 then raise Exception.Create('Failed to obtain update handle');
   dispman_element := vc_dispmanx_element_add(dispman_update, dispman_display, 
@@ -87,8 +83,8 @@ begin
     nil {alpha}, nil {clamp}, 0 {transform});
   if dispman_element = 0 then raise Exception.Create('Failed to add Dispman element');
   native_window.element := dispman_element;
-  native_window.width  := screen_width;
-  native_window.height := screen_height;
+  native_window.width  := Application.ScreenWidth;
+  native_window.height := Application.ScreenHeight;
   WritelnLog('DispmanX', 'done.');
 end;
 
@@ -133,26 +129,43 @@ begin
   WritelnLog('DispmanX', 'Choosing a display config...');
   Res := eglChooseConfig(display, @config_attribs, @config, 1, @num_configs);
   if Res <> EGL_TRUE then raise Exception.Create('Failed to choose a display configuration');
-  WritelnLog('done.');
+  WritelnLog('DispmanX', 'done.');
 
-  WritelnLog('Binding the OpenGL ES API...');
+  WritelnLog('DispmanX', 'Binding the OpenGL ES API...');
   Res := eglBindAPI(EGL_OPENGL_ES_API);
   if Res <> EGL_TRUE then raise Exception.Create('Failed to bind OpenGL ES API');
-  WritelnLog('done.');
+  WritelnLog('DispmanX', 'done.');
 
-  WritelnLog('Creating EGL context...');
+  WritelnLog('DispmanX', 'Creating EGL context...');
   context := eglCreateContext(display, config, EGL_NO_CONTEXT, @context_attribs);
   if context = nil then raise Exception.Create('Failed to create EGL context');
-  WritelnLog('done.');
+  WritelnLog('DispmanX', 'done.');
+end;
+
+procedure TCastleWindowCustom.EGLFromDispmanX;
+var
+  Res: EGLboolean;
+begin
+  WritelnLog('DispmanX', 'Creating a Surface for the native Window...');
+  // Note: egl.pas defines EGLNativeWindowType = Pointer
+  surface := eglCreateWindowSurface(display, config, @native_window, nil);
+  if surface = EGL_NO_SURFACE then raise Exception.Create('Failed to create Window Surface');
+  WritelnLog('DispmanX', 'done.');
+
+  WritelnLog('DispmanX', 'Connecting the rendering context to the Surface...');
+  Res := eglMakeCurrent(display, surface, surface, context);
+  if Res = EGL_FALSE then raise Exception.Create('Failed to connect the rendering context to the Surface');
+  WritelnLog('DispmanX', 'done.');
 end;
 
 { Standard methods }
 
 procedure TCastleWindowCustom.CreateBackend;
 begin
+  { Initialize backend-specific per-window stuff }
   InitDispmanX;
   InitEGL;
-  { TODO (initialize backend-specific per-window stuff; may do nothing) }
+  EGLFromDispmanX;
 end;
 
 procedure TCastleWindowCustom.BackendMenuInitialize;
@@ -311,10 +324,29 @@ end;
 
 { TCastleApplication ---------------------------------------------------------- }
 
+{ DispmanX/Raspberry Pi specific methods }
+
+procedure TCastleApplication.InitDispmanX;
+var
+  Success: Int32;
+begin
+  WritelnLog('DispmanX Application', 'Initializing BCM host...');
+  BCMHostInit;
+  WritelnLog('DispmanX Application', 'done.');
+
+  WritelnLog('DispmanX Application', 'Obtaining LCD display size...');
+  Success := BCMHostGraphicsGetDisplaySize(0 {LCD}, screen_width, screen_height);
+  if Success < 0 then raise Exception.Create('Failed to obtain LCD display size');
+  WritelnLog('DispmanX Application', '%dx%d', [screen_width, screen_height]);
+end;
+
+{ Standard methods }
+
 procedure TCastleApplication.CreateBackend;
 begin
   { TODO (initialize backend-specific stuff for the whole application;
     may do nothing if you don't need anything) }
+  InitDispmanX;
 end;
 
 procedure TCastleApplication.DestroyBackend;
@@ -351,14 +383,12 @@ end;
 
 function TCastleApplication.ScreenWidth: integer;
 begin
-  { TODO }
-  Result := 200;
+  Result := screen_width;
 end;
 
 function TCastleApplication.ScreenHeight: integer;
 begin
-  { TODO }
-  Result := 200;
+  Result := screen_height;
 end;
 
 function TCastleApplication.ScreenStatusBarScaledHeight: Cardinal;

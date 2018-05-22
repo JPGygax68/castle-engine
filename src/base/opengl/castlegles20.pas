@@ -74,6 +74,13 @@ type
 
   type
 
+{$ifdef CASTLE_ENGINE_DISPMANX}
+     EGLNativeDisplayType = Pointer;
+
+     EGLNativeWindowType = Pointer;
+
+     EGLNativePixmapType = Pointer;
+{$else}
 {$ifdef linux}
      EGLNativeDisplayType = PDisplay;
 
@@ -95,6 +102,7 @@ type
      EGLNativePixmapType = pointer;
 {$endif windows}
 {$endif linux}
+{$endif CASTLE_ENGINE_DISPMANX}
 
      EGLBoolean = dword;
 
@@ -1482,7 +1490,7 @@ implementation
       if (EGLLib=0) and (AltLibName <> '') then
         EGLLib:=dynlibs.LoadLibrary(AltLibName);
       if EGLLib=0 then
-        raise Exception.Create(format('Could not load library: %s',[lib]));
+        raise Exception.Create(format('Could not load library %s" because: %s', [lib, dynlibs.GetLoadErrorStr]));
 {$else}
       Exit;
 {$endif}
@@ -1885,24 +1893,34 @@ implementation
 
 procedure GLES20Initialization;
 begin
-  {$ifdef EGL}
-  LoadEGL(
-    {$ifdef windows} 'libEGL.dll'
-    { First try to access libEGL.so.1 (from libegl1-mesa package on Debian).
-      The name libEGL.so is only available in -dev package. }
-    {$else} 'libEGL.so.1', 'libEGL.so'
-    {$endif});
-  {$endif}
-
   LoadGLESv2(
     {$ifdef darwin} '/System/Library/Frameworks/OpenGLES.framework/OpenGLES'
     {$else}
       {$ifdef windows} 'libGLESv2.dll'
       { First try to access libGLESv2.so.2 (from libgles2-mesa package on Debian).
         The name libGLESv2.so is only available in -dev package. }
-      {$else} 'libGLESv2.so.2', 'libGLESv2.so'
+      {$else} 
+      {$ifdef CASTLE_ENGINE_DISPMANX}
+      'libbrcmGLESv2.so'
+      {$else}
+      'libGLESv2.so.2', 'libGLESv2.so'
+      {$endif}
       {$endif}
     {$endif});
+
+  {$ifdef EGL}
+  LoadEGL(
+    {$ifdef windows} 'libEGL.dll'
+    { First try to access libEGL.so.1 (from libegl1-mesa package on Debian).
+      The name libEGL.so is only available in -dev package. }
+    {$else} 
+    {$ifdef CASTLE_ENGINE_DISPMANX}
+    'libbrcmEGL.so'
+    {$else}
+    'libEGL.so.1', 'libEGL.so'
+    {$endif}
+    {$endif});
+  {$endif}
 end;
 
 initialization

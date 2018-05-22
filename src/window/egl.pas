@@ -49,6 +49,7 @@ uses {$ifdef ultibo}GlobalTypes,{$endif}SysUtils{$ifndef ultibo},dynlibs{$endif}
 {From EGL\eglplatform.h}
 type
   {$ifdef X}
+  {$info X}
   EGLNativeDisplayType = PDisplay;
 
   EGLNativeWindowType = TWindow;
@@ -56,12 +57,14 @@ type
   EGLNativePixmapType = TPixmap;
   {$else X}
   {$ifdef windows}
+  {$info Windows}
   EGLNativeDisplayType = HDC;
 
   EGLNativeWindowType = HWND;
 
   EGLNativePixmapType = HBITMAP;
   {$else windows}
+  {$info Neither X nor Windows}
   EGLNativeDisplayType = Pointer;
   
   EGLNativeWindowType = Pointer;
