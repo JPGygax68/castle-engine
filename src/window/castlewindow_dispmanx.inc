@@ -1,14 +1,20 @@
 {
-  EXPERIMENTAL: an attempt to support Raspberry without X.
-  
+  Copyright 2004-2018 Michalis Kamburelis.
+
+  This file is part of "Castle Game Engine".
+
+  "Castle Game Engine" is free software; see the file COPYING.txt,
+  included in this distribution, for details about the copyright.
+
+  "Castle Game Engine" is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
   ----------------------------------------------------------------------------
 }
 
-// TODO: the following probably needs to be properly wrapped into conditional blocks
-//  {$linklib 'bcm_host'}
-
 {$ifdef read_interface_uses}
-dispmanx,
+DispmanX, EGL, VC4,
 {$endif}
 
 {$ifdef read_implementation_uses}
@@ -145,10 +151,10 @@ begin
     { TODO };
 end;
 
-procedure TCastleWindowCustom.SetFullScreen(const Value: boolean);
+procedure TCastleWindowCustom.UpdateFullScreenBackend;
 begin
   { This is the simplest implementation of this method: }
-  SimpleSetFullScreen(Value);
+  SimpleUpdateFullScreenBackend;
   { Some backends may provide a better way of doing this.
     Remove the above line then, and put better implementation here. }
 end;
@@ -243,7 +249,7 @@ end;
 function TCastleApplication.BackendName: string;
 begin
   { TODO }
-  Result := 'My CastleWindow Backend';
+  Result := 'CastleWindow Raspberry Pi (X-less) backend';
 end;
 
 { TCastleWindow -------------------------------------------------------------- }
