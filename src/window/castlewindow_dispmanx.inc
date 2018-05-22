@@ -14,6 +14,10 @@
 }
 
 {$ifdef read_interface_uses}
+{$ifdef unix}
+  cthreads,
+  cmem, // the c memory manager is on some systems much faster for multi-threading
+{$endif}
 DispmanX, EGL, VC4,
 {$endif}
 
@@ -21,6 +25,15 @@ DispmanX, EGL, VC4,
 {$endif}
 
 {$ifdef read_window_interface}
+private
+  display: EGLDisplay;
+  surface: EGLSurface;
+  context: EGLContext;
+  config : EGLConfig;
+  native_window: EGL_DISPMANX_WINDOW_T;
+  dispman_display: DISPMANX_DISPLAY_HANDLE_T;
+
+  procedure InitDispmanX;
 {$endif read_window_interface}
 
 {$ifdef read_application_interface}
@@ -30,8 +43,57 @@ DispmanX, EGL, VC4,
 
 { TCastleWindowCustom ------------------------------------------------------------------ }
 
+{ DispmanX/Raspberry Pi specific methods }
+
+procedure TCastleWindowCustom.InitDispmanX;
+var
+  screen_width, screen_height: UInt32;
+  dispman_element: DISPMANX_ELEMENT_HANDLE_T;
+  dispman_update: DISPMANX_UPDATE_HANDLE_T;
+  success: Int32;
+  src_rect, dst_rect: VC_RECT_T;
+begin
+
+  WritelnLog('DispmanX', 'Initializing BCM host...');
+  BCMHostInit;
+  WritelnLog('DispmanX', 'done.');
+
+  WritelnLog('DispmanX', 'Obtaining LCD display size...');
+  success := BCMHostGraphicsGetDisplaySize(0 {LCD}, screen_width, screen_height);
+  if success < 0 then raise Exception.Create('Failed to obtain LCD display size');
+  WritelnLog('DispmanX', '%dx%d', [screen_width, screen_height]);
+
+  WritelnLog('DispmanX', 'Opening Dispman display...');
+  dispman_display := vc_dispmanx_display_open(0 {LCD});
+  if dispman_display = 0 then raise Exception.Create('Failed to open dispman display');
+  WritelnLog('done.');
+
+  WritelnLog('DispmanX', 'Creating Dispman window from display...');
+  dst_rect.x := 0;
+  dst_rect.y := 0;
+  dst_rect.width  := screen_width;
+  dst_rect.height := screen_height;
+  src_rect.x := 0;
+  src_rect.y := 0;
+  src_rect.width  := screen_width  shl 16;
+  src_rect.height := screen_height shl 16;
+  dispman_update := vc_dispmanx_update_start(0);
+  if dispman_update = 0 then raise Exception.Create('Failed to obtain update handle');
+  dispman_element := vc_dispmanx_element_add(dispman_update, dispman_display, 
+    0 {layer}, @src_rect, 0 {source}, @dst_rect, DISPMANX_PROTECTION_NONE, 
+    nil {alpha}, nil {clamp}, 0 {transform});
+  if dispman_element = 0 then raise Exception.Create('Failed to add Dispman element');
+  native_window.element := dispman_element;
+  native_window.width  := screen_width;
+  native_window.height := screen_height;
+  WritelnLog('DispmanX', 'done.');
+end;
+
+{ Standard methods }
+
 procedure TCastleWindowCustom.CreateBackend;
 begin
+  InitDispmanX;
   { TODO (initialize backend-specific per-window stuff; may do nothing) }
 end;
 
