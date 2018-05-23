@@ -60,21 +60,21 @@ var
   dispman_element: DISPMANX_ELEMENT_HANDLE_T;
   dispman_update: DISPMANX_UPDATE_HANDLE_T;
   src_rect, dst_rect: VC_RECT_T;
-  Res: Integer;
 begin
 
   //Application.InitDispmanX;
 
-  WritelnLog('DispmanX', 'Opening Dispman display...');
+  WritelnLog('CastleWindow', 'Opening Dispman display...');
   dispman_display := vc_dispmanx_display_open(0 {LCD});
   if dispman_display = 0 then raise Exception.Create('Failed to open dispman display');
-  WritelnLog('DispmanX', 'done.');
+  WritelnLog('CastleWindow', 'done.');
 
-  WritelnLog('DispmanX', 'Creating Dispman window from display...');
+  WritelnLog('CastleWindow', 'Creating Dispman window from display...');
   dst_rect.x := 0;
   dst_rect.y := 0;
   dst_rect.width  := Application.ScreenWidth;
   dst_rect.height := Application.ScreenHeight;
+  WritelnLog('CastleWindow', 'screen size: %dx%d', [Application.ScreenWidth, Application.ScreenHeight]);
   src_rect.x := 0;
   src_rect.y := 0;
   src_rect.width  := Application.ScreenWidth  shl 16;
@@ -91,16 +91,17 @@ begin
   vc_dispmanx_update_submit_sync(dispman_update);
   vc_dispmanx_element_remove(dispman_update, dispman_element);
 
-  WritelnLog('DispmanX', 'done.');
+  WritelnLog('CastleWindow', 'done.');
 end;
 
 procedure TCastleWindowCustom.InitEGL;
 const
-  config_attribs: array[0..10] of EGLint = (
+  config_attribs: array[0..12] of EGLint = (
     EGL_RED_SIZE, 8,
     EGL_GREEN_SIZE, 8,
     EGL_BLUE_SIZE, 8,
     EGL_ALPHA_SIZE, 8,
+    EGL_DEPTH_SIZE, 24,
     EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
     EGL_NONE
   );
@@ -114,54 +115,54 @@ var
   num_configs: EGLint;
   //configs: array of EGLConfig;
 begin
-  WritelnLog('DispmanX', 'Obtaining EGL default "display".');
+  WritelnLog('CastleWindow', 'Obtaining EGL default "display".');
   display := eglGetDisplay(EGL_DEFAULT_DISPLAY);
   if display = nil then raise Exception.Create('Failed to obtain EGL default display');
 
-  WritelnLog('DispmanX', 'Initializing EGL display connection...');
+  WritelnLog('CastleWindow', 'Initializing EGL display connection...');
   Res := eglInitialize(display, @Major, @Minor);
   if Res = EGL_FALSE then raise Exception.Create('Failed to initialize the EGL display');
-  WritelnLog('DispmanX', 'done, EGL version is %d.%d', [Major, Minor]);
+  WritelnLog('CastleWindow', 'done, EGL version is %d.%d', [Major, Minor]);
 
   {$ifdef NOT_DEFINED}
-  WritelnLog('DispmanX', 'Obtaining EGL display configs...');
+  WritelnLog('CastleWindow', 'Obtaining EGL display configs...');
   eglGetConfigs(display, nil, 0, @num_configs);
   // TODO: abort if num_configs = 0
   SetLength(configs, num_configs);
   eglGetConfigs(display, @configs, num_configs, @num_configs);
-  WritelnLog('DispmanX', 'obtained %d configs', [num_configs]);
+  WritelnLog('CastleWindow', 'obtained %d configs', [num_configs]);
   {$endif}
 
-  WritelnLog('DispmanX', 'Choosing a display config...');
+  WritelnLog('CastleWindow', 'Choosing a display config...');
   Res := eglChooseConfig(display, @config_attribs, @config, 1, @num_configs);
   if Res <> EGL_TRUE then raise Exception.Create('Failed to choose a display configuration');
-  WritelnLog('DispmanX', 'done.');
+  WritelnLog('CastleWindow', 'done.');
 
-  WritelnLog('DispmanX', 'Binding the OpenGL ES API...');
+  WritelnLog('CastleWindow', 'Binding the OpenGL ES API...');
   Res := eglBindAPI(EGL_OPENGL_ES_API);
   if Res <> EGL_TRUE then raise Exception.Create('Failed to bind OpenGL ES API');
-  WritelnLog('DispmanX', 'done.');
+  WritelnLog('CastleWindow', 'done.');
 
-  WritelnLog('DispmanX', 'Creating EGL context...');
+  WritelnLog('CastleWindow', 'Creating EGL context...');
   context := eglCreateContext(display, config, EGL_NO_CONTEXT, @context_attribs);
   if context = nil then raise Exception.Create('Failed to create EGL context');
-  WritelnLog('DispmanX', 'done.');
+  WritelnLog('CastleWindow', 'done.');
 end;
 
 procedure TCastleWindowCustom.EGLFromDispmanX;
 var
   Res: EGLboolean;
 begin
-  WritelnLog('DispmanX', 'Creating a Surface for the native Window...');
+  WritelnLog('CastleWindow', 'Creating a Surface for the native Window...');
   // Note: egl.pas defines EGLNativeWindowType = Pointer
   surface := eglCreateWindowSurface(display, config, @native_window, nil);
   if surface = EGL_NO_SURFACE then raise Exception.Create('Failed to create Window Surface');
-  WritelnLog('DispmanX', 'done.');
+  WritelnLog('CastleWindow', 'done.');
 
-  WritelnLog('DispmanX', 'Connecting the rendering context to the Surface...');
+  WritelnLog('CastleWindow', 'Connecting the rendering context to the Surface...');
   Res := eglMakeCurrent(display, surface, surface, context);
   if Res = EGL_FALSE then raise Exception.Create('Failed to connect the rendering context to the Surface');
-  WritelnLog('DispmanX', 'done.');
+  WritelnLog('CastleWindow', 'done.');
 end;
 
 // TODO: all the cleanup!
@@ -172,9 +173,7 @@ end;
 procedure TCastleWindowCustom.CreateBackend;
 begin
   { Initialize backend-specific per-window stuff }
-  InitDispmanX;
-  InitEGL;
-  EGLFromDispmanX;
+  { 2018-05-23 MOVED to OpenBackend as per Discord with michalis }
 end;
 
 procedure TCastleWindowCustom.BackendMenuInitialize;
@@ -241,17 +240,26 @@ end;
 
 procedure TCastleWindowCustom.SwapBuffers;
 begin
-  eglSwapBuffers(display, surface);
+  //WritelnLog('CastleWindow', 'SwapBuffers');
+  if eglSwapBuffers(Display, Surface) = EGL_FALSE then
+    WritelnWarning('CastleWindow', 'Cannot swap buffers (this is normal if app is no longer active)');
 end;
 
 procedure TCastleWindowCustom.OpenBackend;
 begin
-  { TODO (create OpenGL context, show window with this context) }
+  InitDispmanX;
+  InitEGL;
+  EGLFromDispmanX;
+
+  FLeft := 0; FTop := 0;
+  DoResize(Application.ScreenWidth, Application.ScreenHeight, false);
+
   Application.OpenWindowsAdd(Self);
 end;
 
 procedure TCastleWindowCustom.CloseBackend;
 begin
+  WritelnLog('CastleWindow', 'CloseBackend');
   { TODO (destroy OpenGL context, hide window; counterpart to OpenBackend) }
 end;
 
@@ -265,7 +273,7 @@ procedure TCastleWindowCustom.BackendMakeCurrent;
 begin
   Assert(not Closed);
   if eglMakeCurrent(Display, Surface, Surface, Context) = EGL_FALSE then
-    WritelnWarning('DispmanX', 'Cannot make context current: ');
+    WritelnWarning('CastleWindow', 'Cannot make context current: ');
 end;
 
 procedure TCastleWindowCustom.SetCursor(const Value: TMouseCursor);
@@ -341,14 +349,13 @@ procedure TCastleApplication.InitDispmanX;
 var
   Success: Int32;
 begin
-  WritelnLog('DispmanX Application', 'Initializing BCM host...');
+  InitializeLog;
   BCMHostInit;
-  WritelnLog('DispmanX Application', 'done.');
+  WritelnLog('DispmanX Application', 'BCM host initialized.');
 
-  WritelnLog('DispmanX Application', 'Obtaining LCD display size...');
   Success := BCMHostGraphicsGetDisplaySize(0 {LCD}, screen_width, screen_height);
   if Success < 0 then raise Exception.Create('Failed to obtain LCD display size');
-  WritelnLog('DispmanX Application', '%dx%d', [screen_width, screen_height]);
+  WritelnLog('DispmanX Application', 'LCD display size obtained: %dx%d', [screen_width, screen_height]);
 end;
 
 { Standard methods }
@@ -367,13 +374,18 @@ end;
 
 function TCastleApplication.ProcessMessage(WaitForMessage, WaitToLimitFPS: boolean): boolean;
 begin
-  Result := { TODO: should we continue? (no quit requested) } true;
+  Result := not Terminated;
+
+  if Result then
+  begin
+    UpdateAndRenderEverything;
+    Result := not Terminated;
+  end;
 end;
 
 function TCastleApplication.ProcessAllMessages: boolean;
 begin
-  Result := { TODO: should we continue? (no quit requested) } true;
-  // a simplest implementation is just to process 1 message: ProcessMessage(false, false)
+  Result := ProcessMessage(false, false);
 end;
 
 procedure TCastleApplication.Run;
