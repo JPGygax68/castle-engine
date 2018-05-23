@@ -1893,6 +1893,10 @@ implementation
 
 procedure GLES20Initialization;
 begin
+  // 2018-05-22 gygax@practicomp.ch: I had to change the load order here: on the Raspberry (CASTLE_ENGINE_DISPMANX),
+  //    GLESv2 must be loaded first. If you try loading EGL first, you get "undefined symbol" errors (to 
+  //    glPointSizePointerOES in my case).
+
   LoadGLESv2(
     {$ifdef darwin} '/System/Library/Frameworks/OpenGLES.framework/OpenGLES'
     {$else}

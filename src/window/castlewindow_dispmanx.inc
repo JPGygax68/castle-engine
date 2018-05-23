@@ -13,6 +13,9 @@
   ----------------------------------------------------------------------------
 }
 
+// TODO: this should probably not be in a separate unit, better use conditional blocks
+//  within castlewindow_dispmanx.inc 
+
 {$ifdef read_interface_uses}
 // The following two imports do nor really belong in the interface part, but 
 // must be here because cthreads must be initialized early.
@@ -34,7 +37,6 @@ private
   config : EGLConfig;
   native_window: EGL_DISPMANX_WINDOW_T;
   dispman_display: DISPMANX_DISPLAY_HANDLE_T;
-  window_width, window_height: Integer;
 
   procedure InitDispmanX;
   procedure InitEGL;
@@ -58,6 +60,7 @@ var
   dispman_element: DISPMANX_ELEMENT_HANDLE_T;
   dispman_update: DISPMANX_UPDATE_HANDLE_T;
   src_rect, dst_rect: VC_RECT_T;
+  Res: Integer;
 begin
 
   //Application.InitDispmanX;
@@ -85,6 +88,9 @@ begin
   native_window.element := dispman_element;
   native_window.width  := Application.ScreenWidth;
   native_window.height := Application.ScreenHeight;
+  vc_dispmanx_update_submit_sync(dispman_update);
+  vc_dispmanx_element_remove(dispman_update, dispman_element);
+
   WritelnLog('DispmanX', 'done.');
 end;
 
@@ -157,6 +163,9 @@ begin
   if Res = EGL_FALSE then raise Exception.Create('Failed to connect the rendering context to the Surface');
   WritelnLog('DispmanX', 'done.');
 end;
+
+// TODO: all the cleanup!
+
 
 { Standard methods }
 
@@ -232,7 +241,7 @@ end;
 
 procedure TCastleWindowCustom.SwapBuffers;
 begin
-  { TODO }
+  eglSwapBuffers(display, surface);
 end;
 
 procedure TCastleWindowCustom.OpenBackend;
@@ -254,7 +263,9 @@ end;
 
 procedure TCastleWindowCustom.BackendMakeCurrent;
 begin
-  { TODO }
+  Assert(not Closed);
+  if eglMakeCurrent(Display, Surface, Surface, Context) = EGL_FALSE then
+    WritelnWarning('DispmanX', 'Cannot make context current: ');
 end;
 
 procedure TCastleWindowCustom.SetCursor(const Value: TMouseCursor);
