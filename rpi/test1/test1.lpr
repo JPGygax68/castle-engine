@@ -13,11 +13,25 @@ const
 {$linklib 'rasperf3d'}
 
 function rp_InitModel: Integer; cdecl; external librasperf3d name 'rp_InitModel';
+function rp_Render: Integer; cdecl; external librasperf3d name 'rp_Render';
 
 var
   Window: TCastleWindow;
   Scene: TCastleScene;
 
+type
+  TRasperf3d = class(TUIControl)
+  public
+    procedure Render; override;
+  end;
+
+procedure TRasperf3d.Render;
+begin
+  inherited;
+  if rp_Render < 0 then raise Exception.Create('Error trying to render Rasperf3d scene');
+end;
+
+{ Framerate display }
 type
   TFPSDisplay = class(TUIControl)
   public
@@ -31,6 +45,7 @@ begin
     'FPS: ' + Window.Fps.ToString, hpRight, vpTop);
 end;
 
+{ Main rendering}
 procedure OpenWindow(Container: TUIContainer);
 begin
   rp_InitModel;
@@ -40,8 +55,13 @@ procedure Update(Container: TUIContainer);
 begin
 end;
 
+procedure Render(Container: TUIContainer);
+begin
+end;
+
 var
   Root: TX3DRootNode;
+  Perf3dControl: TRasperf3d;
   FPSDisplay: TFPSDisplay;
 
 begin
@@ -64,11 +84,14 @@ begin
     { init SceneManager.Camera }
     Window.SceneManager.ExamineCamera.Init(Scene.BoundingBox, 0.1);
 
+    Perf3dControl := TRasperf3d.Create(Application);
+    Window.Controls.InsertFront(Perf3dControl);
     FPSDisplay := TFPSDisplay.Create(Application);
     Window.Controls.InsertFront(FPSDisplay);
 
     Window.OnOpen := @OpenWindow;
-    Window.OnUpdate := @Update;
+    //Window.OnUpdate := @Update;
+    //Window.OnRender := @Render;
     Window.SetDemoOptions(K_F11, CharEscape, true);
     Window.OpenAndRun;
   finally Scene.Free end;
