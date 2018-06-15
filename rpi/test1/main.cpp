@@ -1,3 +1,7 @@
+#include <string>
+#include <stdexcept>
+#include <iostream>
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -235,6 +239,9 @@ void InitModel()
     }
 
     InitShaderProgram();
+
+    int err = glGetError();
+    if (err != 0) throw std::runtime_error(std::string("GL error at end of InitModel():") + std::to_string(err));
 }
 
 void FreeModel()
@@ -360,11 +367,16 @@ void Render()
         }
     } 
 
+    //std::cout << "Number of objects drawn: " << numObjectsDrawn << std::endl;
+
     // clean up state - unbind OpenGL resources
     glUseProgram(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
+
+    int err = glGetError();
+    if (err != 0) throw std::runtime_error(std::string("GL error at end of Render():") + std::to_string(err));
 }
 
 void ApplyTextureFilter()
@@ -424,13 +436,14 @@ void SetNextFramebufferResolution()
     ResetFramebuffer();
 }
 
-int main(void) 
+void SetFramebufferSize(uint32_t w, uint32_t h)
 {
-    // create a native frambuffer with dimensions equal to the display screen
-    rs.fbWidth = 0;
-    rs.fbHeight = 0;
-    InitPlatform(&rs.fbWidth, &rs.fbHeight, false);
+    rs.fbWidth = w;
+    rs.fbHeight = h;
+}
 
+void SetDefaultSettings()
+{
     // default settings
     rs.numObjects = 81;
     rs.showStats = true;
@@ -445,6 +458,16 @@ int main(void)
     rs.cameraLookAway = false;
     rs.modelType = FIRST_MODEL_TYPE;
     rs.multisampling = false;
+}
+
+int main(void) 
+{
+    // create a native frambuffer with dimensions equal to the display screen
+    rs.fbWidth = 0;
+    rs.fbHeight = 0;
+    InitPlatform(&rs.fbWidth, &rs.fbHeight, false);
+
+    SetDefaultSettings();
 
     // load the model, texture, and shader
     InitModel();

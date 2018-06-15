@@ -5,7 +5,7 @@ uses cthreads, CastleVectors, X3DNodes, CastleWindow, CastleLog,
   CastleFilesUtils, CastleParameters, CastleStringUtils, CastleKeysMouse,
   CastleApplicationProperties, 
   CastleUIControls, CastleControls, CastleColors,
-  X3DLoad;
+  X3DLoad, CTypes;
 
 const 
   librasperf3d = 'rasperf3d';
@@ -14,6 +14,8 @@ const
 
 function rp_InitModel: Integer; cdecl; external librasperf3d name 'rp_InitModel';
 function rp_Render: Integer; cdecl; external librasperf3d name 'rp_Render';
+function rp_SetFramebufferSize(w, h: cuint32): Integer; cdecl; external librasperf3d name 'rp_SetFramebufferSize';
+function rp_SetDefaultSettings: Integer; cdecl; external librasperf3d name 'rp_SetDefaultSettings';
 
 var
   Window: TCastleWindow;
@@ -48,7 +50,9 @@ end;
 { Main rendering}
 procedure OpenWindow(Container: TUIContainer);
 begin
-  rp_InitModel;
+  if rp_InitModel < 0 then raise Exception.Create('Error trying to initialize models');
+  rp_SetFramebufferSize(Container.Width, Container.Height);
+  rp_SetDefaultSettings;
 end;
 
 procedure Update(Container: TUIContainer);
