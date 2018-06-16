@@ -238,8 +238,7 @@ const
 {==============================================================================}
 {Note: The order of these is extremely important}
 
-{$ifdef ultibo
-}
+{$ifdef ultibo}
 {VC4 Client libraries}
 {$linklib libilclient}
 {--$linklib libvgfont} //To Do //Continuing //Not compiling yet
@@ -309,8 +308,8 @@ const
 {$linklib libvcsm}
 {$linklib libvcos}
 
-{Math library (Required for EGL)}
-{$linklib m}
+{Math library (Required for (Khronos only ?) EGL)}
+//{$linklib m}
 
 {==============================================================================}
 {type}

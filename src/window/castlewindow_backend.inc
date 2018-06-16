@@ -22,7 +22,7 @@
   {$I castlewindow_gtk.inc}
 {$endif}
 
-{$ifdef CASTLE_ENGINE_DISPMANX}
+{$ifdef CASTLE_WINDOW_DISPMANX}
   {$I castlewindow_dispmanx.inc}
 {$endif}
 

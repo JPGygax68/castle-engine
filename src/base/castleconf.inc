@@ -189,7 +189,8 @@
 { $define OpenGLES}
 {$ifdef ANDROID} {$define OpenGLES} {$endif}
 {$ifdef iOS} {$define OpenGLES} {$endif}
-{$ifdef CASTLE_ENGINE_DISPMANX} {$define OpenGLES} {$endif} // EXPERIMENTAL 2018-05-22 gygax@practicomp.ch
+{$ifdef CASTLE_ENGINE_RASPBERRY_PI} {$define OpenGLES} {$endif} // EXPERIMENTAL gygax@practicomp.ch
+{$ifdef CASTLE_WINDOW_DISPMANX} {$define OpenGLES} {$endif} // EXPERIMENTAL gygax@practicomp.ch
 {$ifdef OpenGLES}
   {$ifdef CASTLE_ENGINE_TEST_DELPHI_MODE}
     {$error We do not support Android/iOS for Delphi yet, use FPC/Lazarus to develop for Android/iOS and other OpenGLES platforms}

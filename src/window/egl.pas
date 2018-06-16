@@ -43,8 +43,8 @@ uses {$ifdef ultibo}GlobalTypes,{$endif}SysUtils{$ifndef ultibo},dynlibs{$endif}
 {$PACKRECORDS C}
 {$ENDIF}
 
-{$linklib 'brcmEGL'}
-{$linklib 'brcmGLESv2'}
+//{$linklib 'brcmEGL'}
+//{$linklib 'brcmGLESv2'}
 
 {From EGL\eglplatform.h}
 type
@@ -303,7 +303,7 @@ const
     a bug in Khronos Bugzilla against task "Registry". }
   { EGL Functions  }
 
-{$ifndef NOT_DEFINED}
+{$ifdef NOT_DEFINED}
 const
   libEGL = 'brcmEGL';
   
@@ -521,7 +521,7 @@ const
   
   EGL_NO_SYNC_KHR : EGLSyncKHR = nil;    
   
-{$ifndef NOT_DEFINED}
+{$ifdef NOT_DEFINED}
   function eglCreateSyncKHR(dpy:EGLDisplay; _type:EGLenum; attrib_list:PEGLint):EGLSyncKHR; cdecl; external libEGL name 'eglCreateSyncKHR';
   function eglDestroySyncKHR(dpy:EGLDisplay; sync:EGLSyncKHR):EGLBoolean; cdecl; external libEGL name 'eglDestroySyncKHR';
   function eglClientWaitSyncKHR(dpy:EGLDisplay; sync:EGLSyncKHR; flags:EGLint; timeout:EGLTimeKHR):EGLint; cdecl; external libEGL name 'eglClientWaitSyncKHR';

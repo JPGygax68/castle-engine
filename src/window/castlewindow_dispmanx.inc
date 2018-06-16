@@ -20,10 +20,11 @@
 // The following two imports do nor really belong in the interface part, but 
 // must be here because cthreads must be initialized early.
 {$ifdef unix}
-  cthreads,
-  cmem, // the c memory manager is on some systems much faster for multi-threading
+  //cthreads,
+  pthreads,
+  //cmem, // the c memory manager is on some systems much faster for multi-threading
 {$endif}
-DispmanX, VC4, // EGL, // NOTE: trying to use CGE's built-in EGL declarations right now
+DispmanX, VC4, EGL,
 {$endif}
 
 {$ifdef read_implementation_uses}
@@ -64,12 +65,12 @@ begin
 
   //Application.InitDispmanX;
 
-  WritelnLog('CastleWindow', 'Opening Dispman display...');
+  WritelnLog('CastleWindow', 'Opening DispmanX display...');
   dispman_display := vc_dispmanx_display_open(0 {LCD});
-  if dispman_display = 0 then raise Exception.Create('Failed to open dispman display');
+  if dispman_display = 0 then raise Exception.Create('Failed to open dispmanx display');
   WritelnLog('CastleWindow', 'done.');
 
-  WritelnLog('CastleWindow', 'Creating Dispman window from display...');
+  WritelnLog('CastleWindow', 'Creating DispmanX window from display...');
   dst_rect.x := 0;
   dst_rect.y := 0;
   dst_rect.width  := Application.ScreenWidth;
@@ -82,7 +83,7 @@ begin
   dispman_update := vc_dispmanx_update_start(0);
   if dispman_update = 0 then raise Exception.Create('Failed to obtain update handle');
   dispman_element := vc_dispmanx_element_add(dispman_update, dispman_display, 
-    0 {layer}, @src_rect, 0 {source}, @dst_rect, DISPMANX_PROTECTION_NONE, 
+    1 {layer}, @dst_rect, 0 {source}, @src_rect, DISPMANX_PROTECTION_NONE, 
     nil {alpha}, nil {clamp}, 0 {transform});
   if dispman_element = 0 then raise Exception.Create('Failed to add Dispman element');
   native_window.element := dispman_element;
@@ -96,13 +97,16 @@ end;
 
 procedure TCastleWindowCustom.InitEGL;
 const
-  config_attribs: array[0..12] of EGLint = (
-    EGL_RED_SIZE, 8,
-    EGL_GREEN_SIZE, 8,
-    EGL_BLUE_SIZE, 8,
-    EGL_ALPHA_SIZE, 8,
-    EGL_DEPTH_SIZE, 24,
-    EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+  config_attribs: array[0..18] of EGLint = (
+    EGL_RED_SIZE,        8,
+    EGL_GREEN_SIZE,      8,
+    EGL_BLUE_SIZE,       8,
+    EGL_ALPHA_SIZE,      8,
+    EGL_DEPTH_SIZE,      16, 
+    EGL_SURFACE_TYPE,    EGL_WINDOW_BIT, 
+    EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT, 
+    EGL_SAMPLE_BUFFERS,  1,
+    EGL_SAMPLES,         4,
     EGL_NONE
   );
   context_attribs: array[0..2] of EGLint = (
@@ -163,6 +167,9 @@ begin
   Res := eglMakeCurrent(display, surface, surface, context);
   if Res = EGL_FALSE then raise Exception.Create('Failed to connect the rendering context to the Surface');
   WritelnLog('CastleWindow', 'done.');
+
+  // TODO: the following may not be useful, I just copied it from rasperf3d
+  eglSwapInterval(display, 0);
 end;
 
 // TODO: all the cleanup!
@@ -255,6 +262,8 @@ begin
   DoResize(Application.ScreenWidth, Application.ScreenHeight, false);
 
   Application.OpenWindowsAdd(Self);
+
+  //FFullScreenBackend := true;
 end;
 
 procedure TCastleWindowCustom.CloseBackend;
@@ -272,6 +281,7 @@ end;
 procedure TCastleWindowCustom.BackendMakeCurrent;
 begin
   Assert(not Closed);
+  WritelnLog('CastleWindow_dispmanx', 'BackendMakeCurrent');
   if eglMakeCurrent(Display, Surface, Surface, Context) = EGL_FALSE then
     WritelnWarning('CastleWindow', 'Cannot make context current: ');
 end;
