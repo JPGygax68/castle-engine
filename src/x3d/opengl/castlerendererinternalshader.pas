@@ -24,7 +24,7 @@ uses Generics.Collections,
   CastleVectors, CastleGLShaders,
   X3DTime, X3DFields, X3DNodes, CastleUtils, CastleBoxes,
   CastleRendererInternalTextureEnv, CastleStringUtils, CastleRendererBaseTypes,
-  CastleShapes;
+  CastleShapes, CastleRectangles;
 
 type
   TSurfaceTexture = (stAmbient, stSpecular, stShininess);
@@ -32,7 +32,7 @@ type
   TTextureType = (tt2D, tt2DShadow, ttCubeMap, tt3D, ttShader);
 
   TTexGenerationComponent = (tgEye, tgObject);
-  TTexGenerationComplete = (tgSphere, tgNormal, tgReflection);
+  TTexGenerationComplete = (tgSphere, tgNormal, tgReflection, tgcMirrorPlane);
   TTexComponent = 0..3;
 
   TFogCoordinateSource = (
@@ -245,6 +245,8 @@ type
     UniformName: string;
     UniformValue: LongInt;
 
+    class var TextureEnvWarningDone: Boolean;
+
     { Mix texture colors into fragment color, based on TTextureEnv specification. }
     class function TextureEnvMix(const AEnv: TTextureEnv;
       const FragmentColor, CurrentTexture: string;
@@ -304,6 +306,15 @@ type
     class function UniformTextureName(const SurfaceTexture: TSurfaceTexture): string; static;
   end;
 
+  { Shader uniforms calculated by rendering using ViewpointMirror,
+    used by GLSL code calculating texture coordinates in case of
+    TextureCoordinateGenerator.mode = "MIRROR-PLANE". }
+  TMirrorPlaneUniforms = class
+    NormalizedPlane: TVector4;
+    CameraPositionOnPlane, CameraSide, CameraUp: TVector3;
+    FrustumDimensions: TFloatRectangle;
+  end;
+
   { Create appropriate shader and at the same time set OpenGL parameters
     for fixed-function rendering. Once everything is set up,
     you can create TX3DShaderProgram instance
@@ -344,6 +355,7 @@ type
     DynamicUniforms: TDynamicUniformList;
     TextureMatrix: TCardinalList;
     NeedsCameraInverseMatrix: boolean;
+    NeedsMirrorPlaneTexCoords: Boolean;
     FPhongShading: boolean;
 
     { We have to optimize the most often case of TShader usage,
@@ -406,6 +418,10 @@ type
     SceneModelView: TMatrix4;
 
     SeparateDiffuseTexture: boolean;
+
+    { Assign this if you used EnableTexGen with tgMirrorPlane
+      to setup correct uniforms. }
+    MirrorPlaneUniforms: TMirrorPlaneUniforms;
 
     constructor Create;
     destructor Destroy; override;
@@ -1391,6 +1407,16 @@ end;
 class function TTextureShader.TextureEnvMix(const AEnv: TTextureEnv;
   const FragmentColor, CurrentTexture: string;
   const ATextureUnit: Cardinal): string;
+
+  procedure Warn(const S: string; const Args: array of const);
+  begin
+    if not TextureEnvWarningDone then
+    begin
+      TextureEnvWarningDone := true;
+      WritelnWarning('MultiTexture mixing', Format(S, Args));
+    end;
+  end;
+
 var
   { GLSL code to get Arg2 (what is coming from MultiTexture.source) }
   Arg2: string;
@@ -1409,7 +1435,24 @@ begin
   { assume AEnv.Source[cRGB] = csPreviousTexture }
   Arg2 := FragmentColor;
 
+  if AEnv.Combine[cRGB] <> AEnv.Combine[cAlpha] then
+    Warn('Not supported in GLSL pipeline: Combine for RGB and alpha different', []);
+  if AEnv.Source[cRGB] <> AEnv.Source[cAlpha] then
+    Warn('Not supported in GLSL pipeline: Source for RGB and alpha different', []);
+
+  { By default, set up simplest modulate operation.
+    The "case AEnv.Combine[cRGB]" below may override this Result to something
+    better. }
+  Result := FragmentColor + ' *= ' + CurrentTexture + ';';
+
   case AEnv.Combine[cRGB] of
+    coModulate:
+      begin
+        if FragmentColor = Arg2 then
+          Result := FragmentColor + ' *= ' + CurrentTexture + ';'
+        else
+          Result := FragmentColor + ' = ' + CurrentTexture + ' * ' + Arg2 + ';';
+      end;
     coReplace:
       begin
         if AEnv.SourceArgument[cRGB] = ta0 then
@@ -1426,13 +1469,17 @@ begin
       end;
     coSubtract:
       Result := FragmentColor + ' = ' + CurrentTexture + ' - ' + Arg2 + ';';
-    else
-      begin
-        { assume coModulate }
-        if FragmentColor = Arg2 then
-          Result := FragmentColor + ' *= ' + CurrentTexture + ';' else
-          Result := FragmentColor + ' = ' + CurrentTexture + ' * ' + Arg2 + ';';
+    coBlend:
+      case AEnv.BlendAlphaSource of
+        csCurrentTexture:
+          Result := FragmentColor + ' = mix(' + FragmentColor + ', ' + CurrentTexture + ', ' + CurrentTexture + '.a);';
+        csPreviousTexture:
+          Result := FragmentColor + ' = mix(' + FragmentColor + ', ' + CurrentTexture + ', ' + FragmentColor + '.a);';
+        else
+          Warn('Not supported in GLSL pipeline: coBlend with BlendAlphaSource = %d', [Ord(AEnv.BlendAlphaSource)]);
       end;
+    else
+      Warn('Not supported in GLSL pipeline: combine value %d', [Ord(AEnv.Combine[cRGB])]);
   end;
 
   case AEnv.TextureFunction of
@@ -1440,15 +1487,15 @@ begin
     tfAlphaReplicate: Result += FragmentColor + '.rgb = vec3(' + FragmentColor + '.a);';
   end;
 
-  { TODO: this handles only a subset of possible values:
-    - different combine values on RGB/alpha not handled yet.
-      We just check Env.Combine[cRGB], and assume it's equal Env.Combine[cAlpha].
-      Same for Env.Source: we assume Env.Source[cRGB] equal to Env.Source[cAlpha].
-    - Scale is ignored (assumed 1)
+  if AEnv.Scale[cRGB] <> 1 then
+    Warn('Not supported in GLSL pipeline: Scale RGB = %f', [AEnv.Scale[cRGB]]);
+  if AEnv.Scale[cAlpha] <> 1 then
+    Warn('Not supported in GLSL pipeline: Scale Alpha = %f', [AEnv.Scale[cAlpha]]);
+
+  { TODO:
     - CurrentTextureArgument, SourceArgument ignored (assumed ta0, ta1),
       except for GL_REPLACE case
-    - many Combine values ignored (treated like modulate),
-      and so also NeedsConstantColor and InterpolateAlphaSource are ignored.
+    - NeedsConstantColor ignored
   }
 end;
 
@@ -1718,6 +1765,7 @@ begin
   DynamicUniforms.Clear;
   TextureMatrix.Clear;
   NeedsCameraInverseMatrix := false;
+  NeedsMirrorPlaneTexCoords := false;
   SeparateDiffuseTexture := false;
 end;
 
@@ -2470,6 +2518,22 @@ var
     WritelnLogMultiline('Generated Shader', LogStr);
   end;
 
+  procedure EnableMirrorPlaneTexCoords;
+  begin
+    if NeedsMirrorPlaneTexCoords then
+      Define('CASTLE_NEEDS_MIRROR_PLANE_TEX_COORDS', stVertex);
+  end;
+
+  procedure PrepareCommonCode;
+  begin
+    if Source[stVertex].Count > 0 then
+      Source[stVertex][0] := StringReplace(Source[stVertex][0],
+        '/* CASTLE-COMMON-CODE */', {$I common.vs.inc}, [rfReplaceAll]);
+    if Source[stFragment].Count > 0 then
+      Source[stFragment][0] := StringReplace(Source[stFragment][0],
+        '/* CASTLE-COMMON-CODE */', {$I common.fs.inc}, [rfReplaceAll]);
+  end;
+
 var
   ShaderType: TShaderType;
   GeometryInputSize: string;
@@ -2487,6 +2551,8 @@ begin
     EnableEffects(AppearanceEffects);
   if GroupEffects <> nil then
     EnableEffects(GroupEffects);
+  EnableMirrorPlaneTexCoords;
+  PrepareCommonCode;
 
   if HasGeometryMain then
   begin
@@ -2650,6 +2716,10 @@ begin
 
   TexCoordName := TTextureShader.CoordName(TextureUnit);
 
+  FCodeHash.AddInteger(
+    1303 * (Ord(Generation) + 1) +
+    1307 * (TextureUnit + 1));
+
   { Enable for fixed-function and shader pipeline }
   case Generation of
     tgSphere:
@@ -2672,7 +2742,6 @@ begin
           '/* Using 1.0 / 2.0 instead of 0.5 to workaround fglrx bugs */' + NL +
           '%s.st = r.xy / m + vec2(1.0, 1.0) / 2.0;',
           [TexCoordName]);
-        FCodeHash.AddInteger(1301 * (TextureUnit + 1));
       end;
     tgNormal:
       begin
@@ -2689,7 +2758,6 @@ begin
         end;
         TextureCoordGen += Format('%s.xyz = castle_normal_eye;' + NL,
           [TexCoordName]);
-        FCodeHash.AddInteger(1303 * (TextureUnit + 1));
       end;
     tgReflection:
       begin
@@ -2707,7 +2775,13 @@ begin
         { Negate reflect result --- just like for demo_models/water/water_reflections_normalmap.fs }
         TextureCoordGen += Format('%s.xyz = -reflect(-vec3(castle_vertex_eye), castle_normal_eye);' + NL,
           [TexCoordName]);
-        FCodeHash.AddInteger(1307 * (TextureUnit + 1));
+      end;
+    tgcMirrorPlane:
+      begin
+        NeedsMirrorPlaneTexCoords := true;
+        NeedsCameraInverseMatrix := true;
+        TextureCoordGen += Format('%s.xyz = castle_mirror_plane_tex_coords(castle_CameraInverseMatrix * castle_vertex_eye);' + NL,
+          [TexCoordName]);
       end;
     else raise EInternalError.Create('TShader.EnableTexGen:Generation?');
   end;
@@ -3076,10 +3150,25 @@ begin
     LightShaders[I].SetDynamicUniforms(AProgram);
   for I := 0 to DynamicUniforms.Count - 1 do
     DynamicUniforms[I].SetUniform(AProgram);
+
   if NeedsCameraInverseMatrix then
   begin
     RenderingCamera.InverseMatrixNeeded;
     AProgram.SetUniform('castle_CameraInverseMatrix', RenderingCamera.InverseMatrix);
+  end;
+
+  if NeedsMirrorPlaneTexCoords and (MirrorPlaneUniforms <> nil) then
+  begin
+    AProgram.SetUniform('castle_NormalizedPlane', MirrorPlaneUniforms.NormalizedPlane);
+    AProgram.SetUniform('castle_CameraPositionOnPlane', MirrorPlaneUniforms.CameraPositionOnPlane);
+    AProgram.SetUniform('castle_CameraSide', MirrorPlaneUniforms.CameraSide);
+    AProgram.SetUniform('castle_CameraUp', MirrorPlaneUniforms.CameraUp);
+    AProgram.SetUniform('castle_FrustumDimensions',
+      Vector4(
+        MirrorPlaneUniforms.FrustumDimensions.Left,
+        MirrorPlaneUniforms.FrustumDimensions.Bottom,
+        MirrorPlaneUniforms.FrustumDimensions.Width,
+        MirrorPlaneUniforms.FrustumDimensions.Height));
   end;
 end;
 

@@ -271,9 +271,13 @@
       const Render: TRenderFromViewFunction;
       const ProjectionNear, ProjectionFar: Single;
       var NeedsRestoreViewport: boolean;
-      CurrentViewpoint: TAbstractViewpointNode;
-      CameraViewKnown: boolean;
-      const CameraPosition, CameraDirection, CameraUp: TVector3);
+      const CurrentViewpoint: TAbstractViewpointNode;
+      const CameraViewKnown: boolean;
+      const CameraPosition, CameraDirection, CameraUp: TVector3;
+      const ShapeBoundingBox: TBox3D;
+      const GeometryTransform: TMatrix4;
+      const GeometryCoords: TVector3List;
+      var MirrorPlaneUniforms: TMirrorPlaneUniforms);
   end;
 
   { Common handling for texture nodes of TAbstractEnvironmentTextureNode. }
@@ -841,13 +845,13 @@ begin
               glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA + Argument[Env.SourceArgument[cAlpha]], GL_SRC_ALPHA);
             end;
 
-            if (Env.Combine[cRGB] = coInterpolate) or
-               (Env.Combine[cAlpha] = coInterpolate) then
+            if (Env.Combine[cRGB] = coBlend) or
+               (Env.Combine[cAlpha] = coBlend) then
             begin
               { Whole source2 (both RGB and alpha) is filled by alpha from color
-                specified by InterpolateAlphaSource. }
-              glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE2_RGB, ColorSourceGL[Env.InterpolateAlphaSource]);
-              glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE2_ALPHA, ColorSourceGL[Env.InterpolateAlphaSource]);
+                specified by BlendAlphaSource. }
+              glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE2_RGB, ColorSourceGL[Env.BlendAlphaSource]);
+              glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE2_ALPHA, ColorSourceGL[Env.BlendAlphaSource]);
               glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND2_RGB, GL_SRC_ALPHA);
               glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND2_ALPHA, GL_SRC_ALPHA);
             end;
@@ -1210,14 +1214,15 @@ procedure TGLRenderedTextureNode.Update(
   const Render: TRenderFromViewFunction;
   const ProjectionNear, ProjectionFar: Single;
   var NeedsRestoreViewport: boolean;
-  CurrentViewpoint: TAbstractViewpointNode;
-  CameraViewKnown: boolean;
-  const CameraPosition, CameraDirection, CameraUp: TVector3);
+  const CurrentViewpoint: TAbstractViewpointNode;
+  const CameraViewKnown: boolean;
+  const CameraPosition, CameraDirection, CameraUp: TVector3;
+  const ShapeBoundingBox: TBox3D;
+  const GeometryTransform: TMatrix4;
+  const GeometryCoords: TVector3List;
+  var MirrorPlaneUniforms: TMirrorPlaneUniforms);
 
-var
-  Viewpoint: TAbstractViewpointNode;
-
-  function GetProjectionMatrix: TMatrix4;
+  function GetProjectionMatrix(const Viewpoint: TAbstractViewpointNode): TMatrix4;
   { This somewhat follows the logic similar to TCastleScene.GLProjectionCore:
     we have to calculate projection, given Viewpoint node.
 
@@ -1311,7 +1316,8 @@ var
     end;
   end;
 
-  procedure GetRenderedTextureCamera(out Pos, Dir, Up: TVector3);
+  procedure GetRenderedTextureCamera(const Viewpoint: TAbstractViewpointNode;
+    out Pos, Dir, Up: TVector3);
   var
     { It's returned by Viewpoint.GetView, but we'll ignore it. }
     GravityUp: TVector3;
@@ -1346,27 +1352,162 @@ var
     end;
   end;
 
+  { Best plane for a set of points.
+    The plane direction (first 3 components) is guaranteed to be normalized. }
+  function PointsPlane(const Points: TVector3List; out Plane: TVector4): Boolean;
+  var
+    Normal: TVector3 absolute Plane;
+    Tri: TTriangle3;
+    I: Integer;
+    PlaneShift: Single;
+    Point: TVector3;
+  begin
+    if Points.Count < 3 then Exit(false);
+
+    { Calculate plane Normal, averaging normals of all valid triangles.
+      Assumes polygon is convex. }
+
+    Normal := TVector3.Zero;
+
+    Tri[0] := Points.List^[0];
+    Tri[1] := Points.List^[1];
+    Tri[2] := Points.List^[2];
+    if Tri.IsValid then
+      Normal := Tri.Normal;
+
+    for I := 3 to Points.Count - 1 do
+    begin
+      Tri[1] := Tri[2];
+      Tri[2] := Points.List^[I];
+      if Tri.IsValid then
+        Normal := Normal + Tri.Normal;
+    end;
+
+    if Normal.IsPerfectlyZero then
+      Exit(false); // no valid triangle
+
+    { calculate Plane[3] by averaging possible shift for all Points }
+    PlaneShift := 0;
+    for Point in Points do
+    begin
+      PlaneShift := PlaneShift +
+        -Normal.Data[0] * Point.Data[0]
+        -Normal.Data[1] * Point.Data[1]
+        -Normal.Data[2] * Point.Data[2];
+    end;
+    PlaneShift := PlaneShift / Points.Count;
+
+    Plane[3] := PlaneShift;
+    Result := true;
+  end;
+
+  procedure GetMatricesForViewpoint(const Viewpoint: TAbstractViewpointNode;
+    out CameraMatrix, CameraRotationMatrix, ProjectionMatrix: TMatrix4);
+  var
+    Pos, Dir, Up: TVector3;
+  begin
+    ProjectionMatrix := GetProjectionMatrix(Viewpoint);
+
+    GetRenderedTextureCamera(Viewpoint, Pos, Dir, Up);
+    CameraMatrix := LookDirMatrix(Pos, Dir, Up);
+    CameraRotationMatrix := LookDirMatrix(TVector3.Zero, Dir, Up);
+  end;
+
+  procedure GetMatricesForViewpointMirror(const Viewpoint: TViewpointMirrorNode;
+    out CameraMatrix, CameraRotationMatrix, ProjectionMatrix: TMatrix4);
+  var
+    Pos, Dir, Up, PosOnPlane, Side, Coord, PlaneCoord: TVector3;
+    PlaneCoordProjected: TVector2;
+    Plane: TVector4;
+    ZNear: Single;
+    FrustumDimensions: TFloatRectangle;
+    ShapeCorners: TBoxCorners;
+  begin
+    if GeometryCoords = nil then
+    begin
+      WritelnWarning('ViewpointMirror can only be used on node with coordinates');
+      GetMatricesForViewpoint(
+        CurrentViewpoint, CameraMatrix, CameraRotationMatrix, ProjectionMatrix);
+      Exit;
+    end;
+
+    GetRenderedTextureCamera(CurrentViewpoint, Pos, Dir, Up);
+
+    { calculate Plane of the mirror }
+    if not PointsPlane(GeometryCoords, Plane) then
+    begin
+      WritelnWarning('ViewpointMirror plane cannot be determined, the shape does not define a plane');
+      GetMatricesForViewpoint(
+        CurrentViewpoint, CameraMatrix, CameraRotationMatrix, ProjectionMatrix);
+      Exit;
+    end;
+    Plane := PlaneTransform(Plane, GeometryTransform);
+
+    { reflect Pos, Dir, Up for mirror view }
+    PosOnPlane := PointOnPlaneClosestToPoint(Plane, Pos);
+    Pos := 2 * PosOnPlane - Pos; // mirror Pos versus Plane
+    Dir := PosOnPlane - Pos;
+    //Up := keep current Up
+
+    { calculate Side, and make Dir, Up normalized and orthogonal }
+    Dir.NormalizeMe;
+    //Up.NormalizeMe; // no need to
+    MakeVectorsOrthoOnTheirPlane(Up, Dir);
+    Side := TVector3.CrossProduct(Dir, Up);
+
+    CameraMatrix := LookDirMatrix(Pos, Dir, Side, Up);
+    CameraRotationMatrix := LookDirMatrix(TVector3.Zero, Dir, Side, Up);
+
+    { calculate FrustumDimensions,
+      to include ShapeBoundingBox projected on the Plane. }
+    ShapeBoundingBox.Corners(ShapeCorners);
+    FrustumDimensions := TFloatRectangle.Empty;
+    for Coord in ShapeCorners do
+    begin
+      PlaneCoord := PointOnPlaneClosestToPoint(Plane, Coord) - PosOnPlane;
+      PlaneCoordProjected := Vector2(
+        TVector3.DotProduct(PlaneCoord, Side),
+        TVector3.DotProduct(PlaneCoord, Up)
+      );
+      FrustumDimensions := FrustumDimensions.Include(PlaneCoordProjected);
+    end;
+
+    ZNear := PointsDistance(Pos, PosOnPlane) + Viewpoint.DistanceFromShape;
+    ProjectionMatrix := FrustumProjectionMatrix(FrustumDimensions,
+      ZNear, ProjectionFar);
+
+    if MirrorPlaneUniforms = nil then
+      MirrorPlaneUniforms := TMirrorPlaneUniforms.Create;
+    MirrorPlaneUniforms.NormalizedPlane := Plane;
+    MirrorPlaneUniforms.CameraPositionOnPlane := PosOnPlane;
+    MirrorPlaneUniforms.CameraSide := Side;
+    MirrorPlaneUniforms.CameraUp := Up;
+    MirrorPlaneUniforms.FrustumDimensions := FrustumDimensions;
+  end;
+
 var
   CameraMatrix, CameraRotationMatrix, SavedProjectionMatrix, NewProjectionMatrix: TMatrix4;
-  Pos, Dir, Up: TVector3;
   Camera: TRenderingCamera;
 begin
   if FGLName = 0 then Exit;
 
   { calculate Viewpoint }
-  if (TextureNode.FdViewpoint.Value <> nil) and
-     (TextureNode.FdViewpoint.Value is TAbstractViewpointNode) then
-    Viewpoint := TAbstractViewpointNode(TextureNode.FdViewpoint.Value) else
-    Viewpoint := CurrentViewpoint;
+  if TextureNode.FdViewpoint.Value is TViewpointMirrorNode then
+    GetMatricesForViewpointMirror(
+      TViewpointMirrorNode(TextureNode.FdViewpoint.Value),
+      CameraMatrix, CameraRotationMatrix, NewProjectionMatrix)
+  else
+  if TextureNode.FdViewpoint.Value is TAbstractViewpointNode then
+    GetMatricesForViewpoint(
+      TAbstractViewpointNode(TextureNode.FdViewpoint.Value),
+      CameraMatrix, CameraRotationMatrix, NewProjectionMatrix)
+  else
+    GetMatricesForViewpoint(
+      CurrentViewpoint,
+      CameraMatrix, CameraRotationMatrix, NewProjectionMatrix);
 
-  NewProjectionMatrix := GetProjectionMatrix;
   TextureNode.EventProjection.Send(NewProjectionMatrix);
-
-  GetRenderedTextureCamera(Pos, Dir, Up);
-  CameraMatrix := LookDirMatrix(Pos, Dir, Up);
-  CameraRotationMatrix := LookDirMatrix(TVector3.Zero, Dir, Up);
   TextureNode.EventViewing.Send(CameraMatrix);
-
   TextureNode.EventRendering.Send(true);
 
   Camera := TRenderingCamera.Create;

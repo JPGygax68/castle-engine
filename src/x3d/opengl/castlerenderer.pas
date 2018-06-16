@@ -126,7 +126,7 @@ uses Classes, SysUtils, Generics.Collections,
   CastleGLShaders, CastleGLImages, CastleTextureImages, CastleVideos, X3DTime,
   CastleShapes, CastleGLCubeMaps, CastleClassUtils, CastleCompositeImage, Castle3D,
   CastleGeometryArrays, CastleArraysGenerator, CastleRendererInternalShader,
-  CastleRendererInternalTextureEnv;
+  CastleRendererInternalTextureEnv, CastleBoxes;
 
 {$define read_interface}
 
@@ -749,6 +749,11 @@ type
 
     { Assign this each time before passing this shape to RenderShape. }
     ModelView: TMatrix4;
+
+    { For implementing TextureCoordinateGenerator.mode = "MIRROR-PLANE". }
+    MirrorPlaneUniforms: TMirrorPlaneUniforms;
+
+    destructor Destroy; override;
   end;
 
   TGLRenderer = class
@@ -991,7 +996,7 @@ type
       The given camera position, direction, up should be in world space
       (that is, in TCastleSceneManager space,
       not in space local to this TCastleScene). }
-    procedure UpdateGeneratedTextures(Shape: TShape;
+    procedure UpdateGeneratedTextures(Shape: TX3DRendererShape;
       TextureNode: TAbstractTextureNode;
       const Render: TRenderFromViewFunction;
       const ProjectionNear, ProjectionFar: Single;
@@ -1043,9 +1048,8 @@ implementation
 // TODO: This unit temporarily uses RenderingCamera singleton,
 // to keep it working for backward compatibility.
 uses Math,
-  CastleStringUtils, CastleGLVersion, CastleLog,
-  CastleRenderingCamera,
-  X3DCameraUtils, CastleProjection, CastleRectangles;
+  CastleStringUtils, CastleGLVersion, CastleLog, CastleRenderingCamera,
+  X3DCameraUtils, CastleProjection, CastleRectangles, CastleTriangles;
 {$warnings on}
 
 {$define read_implementation}
@@ -2209,6 +2213,12 @@ begin
 end;
 
 { TX3DRendererShape --------------------------------------------------------- }
+
+destructor TX3DRendererShape.Destroy;
+begin
+  FreeAndNil(MirrorPlaneUniforms);
+  inherited;
+end;
 
 procedure TX3DRendererShape.LoadArraysToVbo;
 begin
@@ -3514,7 +3524,7 @@ begin
 end;
 {$endif}
 
-procedure TGLRenderer.UpdateGeneratedTextures(Shape: TShape;
+procedure TGLRenderer.UpdateGeneratedTextures(Shape: TX3DRendererShape;
   TextureNode: TAbstractTextureNode;
   const Render: TRenderFromViewFunction;
   const ProjectionNear, ProjectionFar: Single;
@@ -3602,16 +3612,28 @@ var
   procedure UpdateRenderedTexture(TexNode: TRenderedTextureNode);
   var
     GLNode: TGLRenderedTextureNode;
+    GeometryCoordsField: TMFVec3f;
+    GeometryCoords: TVector3List;
   begin
     if CheckUpdate(TexNode.GeneratedTextureHandler) then
     begin
       GLNode := TGLRenderedTextureNode(GLTextureNodes.TextureNode(TexNode));
       if GLNode <> nil then
       begin
+        { calculate GeometryCoords }
+        GeometryCoords := nil;
+        if Shape.Geometry.InternalCoord(Shape.State, GeometryCoordsField) and
+           (GeometryCoordsField <> nil) then
+          GeometryCoords := GeometryCoordsField.Items;
+
         GLNode.Update(Render, ProjectionNear, ProjectionFar,
           NeedsRestoreViewport,
           CurrentViewpoint, CameraViewKnown,
-          CameraPosition, CameraDirection, CameraUp);
+          CameraPosition, CameraDirection, CameraUp,
+          Shape.BoundingBox,
+          Shape.State.Transform,
+          GeometryCoords,
+          Shape.MirrorPlaneUniforms);
 
         PostUpdate;
 
