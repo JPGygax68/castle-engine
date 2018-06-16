@@ -343,7 +343,7 @@ unit CastleWindow;
    {$ifndef CASTLE_WINDOW_TEMPLATE}
     {$ifndef CASTLE_WINDOW_LCL}
      {$ifndef CASTLE_WINDOW_ANDROID}
-      {$ifdef CASTLE_WINDOW_DISPMANX}
+      {$ifndef CASTLE_WINDOW_DISPMANX}
         {$ifndef CASTLE_WINDOW_LIBRARY}
 
          // PasDoc cannot handle "$if defined(xxx)" for now, workaround below

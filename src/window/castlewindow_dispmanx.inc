@@ -24,7 +24,7 @@
   pthreads,
   //cmem, // the c memory manager is on some systems much faster for multi-threading
 {$endif}
-DispmanX, VC4, EGL,
+DispmanX, VC4, // CastleGLES20,
 {$endif}
 
 {$ifdef read_implementation_uses}

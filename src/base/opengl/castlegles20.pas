@@ -74,7 +74,7 @@ type
 
   type
 
-{$ifdef CASTLE_ENGINE_DISPMANX}
+{$ifdef CASTLE_WINDOW_DISPMANX}
      EGLNativeDisplayType = Pointer;
 
      EGLNativeWindowType = Pointer;
@@ -102,7 +102,7 @@ type
      EGLNativePixmapType = pointer;
 {$endif windows}
 {$endif linux}
-{$endif CASTLE_ENGINE_DISPMANX}
+{$endif CASTLE_WINDOW_DISPMANX}
 
      EGLBoolean = dword;
 
