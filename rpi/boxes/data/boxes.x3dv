@@ -18,7 +18,7 @@ DEF Box1 Shape {
       initializeOnly SFNode my_texture ImageTexture { url "./bricks2.jpg" }
     }
   }
-  geometry Box { size 1 10 1 }
+  geometry Box { size 1 1 1 }
 }
 
 #DEF Box1Transform Transform { translation  0 0 0 rotation 1 0 0 0 children USE Box1 }

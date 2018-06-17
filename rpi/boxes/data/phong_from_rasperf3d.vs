@@ -1,3 +1,7 @@
+#ifdef GL_ES
+precision lowp float;
+#endif
+
 // input constants
 uniform mat4 castle_ModelViewMatrix;
 uniform mat4 castle_ProjectionMatrix;

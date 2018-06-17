@@ -1,3 +1,9 @@
+#version 100
+
+#ifdef GL_ES
+precision lowp float;
+#endif
+
 uniform vec3 castle_LightSource0Position;
 uniform sampler2D my_texture;
 

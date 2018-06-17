@@ -83,7 +83,7 @@ begin
   dispman_update := vc_dispmanx_update_start(0);
   if dispman_update = 0 then raise Exception.Create('Failed to obtain update handle');
   dispman_element := vc_dispmanx_element_add(dispman_update, dispman_display, 
-    1 {layer}, @dst_rect, 0 {source}, @src_rect, DISPMANX_PROTECTION_NONE, 
+    0 {layer}, @dst_rect, 0 {source}, @src_rect, DISPMANX_PROTECTION_NONE, 
     nil {alpha}, nil {clamp}, 0 {transform});
   if dispman_element = 0 then raise Exception.Create('Failed to add Dispman element');
   native_window.element := dispman_element;
@@ -102,7 +102,7 @@ const
     EGL_GREEN_SIZE,      8,
     EGL_BLUE_SIZE,       8,
     EGL_ALPHA_SIZE,      8,
-    EGL_DEPTH_SIZE,      16, 
+    EGL_DEPTH_SIZE,      24, 
     EGL_SURFACE_TYPE,    EGL_WINDOW_BIT, 
     EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT, 
     EGL_SAMPLE_BUFFERS,  1,
@@ -117,11 +117,14 @@ var
   Res: EGLboolean;
   Major, Minor: EGLint;
   num_configs: EGLint;
-  //configs: array of EGLConfig;
+  {$ifndef NOT_DEFINED}
+  configs: array of EGLConfig;
+  {$endif}
 begin
-  WritelnLog('CastleWindow', 'Obtaining EGL default "display".');
+  WritelnLog('CastleWindow', 'Obtaining EGL default display...');
   display := eglGetDisplay(EGL_DEFAULT_DISPLAY);
   if display = nil then raise Exception.Create('Failed to obtain EGL default display');
+  WritelnLog('CastleWindow', 'done.');
 
   WritelnLog('CastleWindow', 'Initializing EGL display connection...');
   Res := eglInitialize(display, @Major, @Minor);

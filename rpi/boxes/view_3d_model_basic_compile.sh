@@ -8,4 +8,4 @@ set -eu
 # Allow calling this script from it's dir.
 if [ -f view_3d_model_basic.lpr ]; then cd ../../; fi
 
-fpc -dCASTLE_ENGINE_DISPMANX -dRELEASE @castle-fpc.cfg examples/3d_rendering_processing/view_3d_model_basic.lpr
+fpc -dRELEASE @castle-fpc.cfg examples/3d_rendering_processing/view_3d_model_basic.lpr

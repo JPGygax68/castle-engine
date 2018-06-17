@@ -8,4 +8,4 @@ set -eu
 # Allow calling this script from it's dir.
 if [ -f test1.lpr ]; then cd ../../; fi
 
-fpc -dRELEASE @castle-fpc.cfg -Fl`pwd`/rpi/test1/rasperf3d rpi/test1/test1.lpr
+fpc -dRELEASE @castle-fpc.cfg -Fl`pwd`/rpi/rasperf3d rpi/rasperf3d/test1.lpr
