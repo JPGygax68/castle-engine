@@ -1893,7 +1893,7 @@ implementation
 
 procedure GLES20Initialization;
 begin
-  // 2018-05-22 gygax@practicomp.ch: I had to change the load order here: on the Raspberry (CASTLE_ENGINE_DISPMANX),
+  // 2018-05-22 gygax@practicomp.ch: I had to change the load order here: on the Raspberry Pi (CASTLE_WINDOW_DISPMANX),
   //    GLESv2 must be loaded first. If you try loading EGL first, you get "undefined symbol" errors (to 
   //    glPointSizePointerOES in my case).
 
@@ -1904,7 +1904,7 @@ begin
       { First try to access libGLESv2.so.2 (from libgles2-mesa package on Debian).
         The name libGLESv2.so is only available in -dev package. }
       {$else} 
-      {$ifdef CASTLE_ENGINE_DISPMANX}
+      {$ifdef CASTLE_WINDOW_DISPMANX}
       'libbrcmGLESv2.so'
       {$else}
       'libGLESv2.so.2', 'libGLESv2.so'
@@ -1918,7 +1918,7 @@ begin
     { First try to access libEGL.so.1 (from libegl1-mesa package on Debian).
       The name libEGL.so is only available in -dev package. }
     {$else} 
-    {$ifdef CASTLE_ENGINE_DISPMANX}
+    {$ifdef CASTLE_WINDOW_DISPMANX}
     'libbrcmEGL.so'
     {$else}
     'libEGL.so.1', 'libEGL.so'
