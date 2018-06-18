@@ -28,6 +28,7 @@ DispmanX, VC4, // CastleGLES20,
 {$endif}
 
 {$ifdef read_implementation_uses}
+BaseUnix,
 {$endif}
 
 {$ifdef read_window_interface}
@@ -46,8 +47,15 @@ private
 
 {$ifdef read_application_interface}
 private
+  // TODO: support multiple screens!
   screen_width, screen_height: UInt32;
+  //touch_file: TFileStream;
+  touch_fd: Longint;
   procedure InitDispmanX;
+  procedure ShutdownDispmanx;
+  procedure OpenInputDevices;
+  procedure CloseInputDevices;
+  procedure CollectAndDispatchTouchEvents;
 {$endif read_application_interface}
 
 {$ifdef read_implementation}
@@ -107,6 +115,7 @@ const
     EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT, 
     EGL_SAMPLE_BUFFERS,  1,
     EGL_SAMPLES,         4,
+    //EGL_RENDER_BUFFER,   EGL_SINGLE_BUFFER,
     EGL_NONE
   );
   context_attribs: array[0..2] of EGLint = (
@@ -172,7 +181,7 @@ begin
   WritelnLog('CastleWindow', 'done.');
 
   // TODO: the following may not be useful, I just copied it from rasperf3d
-  eglSwapInterval(display, 0);
+  eglSwapInterval(display, 0);  // no vsync
 end;
 
 // TODO: all the cleanup!
@@ -371,6 +380,75 @@ begin
   WritelnLog('DispmanX Application', 'LCD display size obtained: %dx%d', [screen_width, screen_height]);
 end;
 
+procedure TCastleApplication.ShutdownDispmanx;
+begin
+  WritelnWarning('TCastleApplication_dispmanx.ShutdownDispmanX', 'NOT IMPLEMENTED YET');
+end;
+
+procedure TCastleApplication.OpenInputDevices;
+begin
+  //touch_file := TFileStream.Create('/dev/input/event2', fmOpenRead);
+  //touch_fd := 0;
+  touch_fd := fpOpen('/dev/input/event2', O_RdOnly or O_NonBlock);
+end;
+
+procedure TCastleApplication.CloseInputDevices;
+begin
+  //touch_file.Destroy;
+  if touch_fd > 2 then begin fpClose(touch_fd); touch_fd := -1; end;
+end;
+
+procedure TCastleApplication.CollectAndDispatchTouchEvents;
+const
+  // TODO: those definitions belong ..elsewhere
+  EV_SYN = $00;
+  EV_KEY = $01;
+  EV_REL = $02;
+  EV_ABS = $03;
+  EV_MSC = $04;
+  EV_SW  = $05;
+  EV_LED = $11;
+  EV_SND = $12;
+  EV_REP = $14;
+  EV_FF  = $15;
+  EV_PWR = $16;
+  EV_FF_STATUS  = $17;
+  EV_MAX = $1f;
+  EV_CNT =(EV_MAX+1);
+type 
+  InputEvent = packed record
+    time: timeval; //sec, nsec: UInt32;
+    _type, code: UInt16;
+    value: UInt32;
+  end;
+const
+  ZeroTime: timeval = (tv_sec: 0; tv_usec: 0);
+var
+  FDS: TFDSet;
+  Buffer: array[0..1023] of Byte;
+  PEvent: ^InputEvent;
+  Count, Offset: Longint;
+begin
+  //WritelnLog('CollectAndDispatchTouchEvents', 'touch file handle: %d', [touch_file.Handle]);
+  //fpfd_zero(FDS);
+  //fpfd_set(0, FDS);
+  //if fpSelect(1, @FDS, nil, nil, @ZeroTime) > 0 then
+  //begin
+    //WritelnLog('CollectAndDispatchTouchEvents', 'input!');
+    //Count := touch_file.Read(Buffer, SizeOf(Buffer));
+    Count := fpRead(touch_fd, Buffer, SizeOf(Buffer));
+    Offset := 0;
+    while Count > 0 do
+    begin
+      PEvent := @Buffer[Offset];
+      Offset += SizeOf(InputEvent);
+      Count -= SizeOf(InputEvent);
+      WritelnLog('TCastleApplication_dispmanx.CollectAndDispatchTouchEvents', 'Time: %u.%u: %u', [
+        PEvent^.time.tv_sec, PEvent^.time.tv_usec, PEvent^._type]);
+    end;
+  //end;
+end;
+
 { Standard methods }
 
 procedure TCastleApplication.CreateBackend;
@@ -378,10 +456,12 @@ begin
   { TODO (initialize backend-specific stuff for the whole application;
     may do nothing if you don't need anything) }
   InitDispmanX;
+  OpenInputDevices;
 end;
 
 procedure TCastleApplication.DestroyBackend;
 begin
+  CloseInputDevices;
   { TODO }
 end;
 
@@ -391,6 +471,7 @@ begin
 
   if Result then
   begin
+    CollectAndDispatchTouchEvents;
     UpdateAndRenderEverything;
     Result := not Terminated;
   end;
