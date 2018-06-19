@@ -41,20 +41,32 @@ private
   dispman_display: DISPMANX_DISPLAY_HANDLE_T;
 
   procedure InitDispmanX;
+  procedure CleanupDispmanX;
   procedure InitEGL;
+  procedure CleanupEGL;
   procedure EGLFromDispmanX;
 {$endif read_window_interface}
 
 {$ifdef read_application_interface}
+type 
+  TTouchState = (tsInactive = 0, tsDown, tsUp, tsMotion);
+  TTouch = record
+    State: TTouchState;
+    LastPosition, CurrentPosition: TVector2;
+  end;
+  TMultiTouch = array[0..4] of TTouch;
+
 private
   // TODO: support multiple screens!
-  screen_width, screen_height: UInt32;
-  //touch_file: TFileStream;
-  touch_fd: Longint;
+  FScreenWidth, FScreenHeight: UInt32;
+  FTouchFd: Longint;
+  FTouchSlot: UInt32;
+  FMultiTouch: TMultiTouch;
+
   procedure InitDispmanX;
-  procedure ShutdownDispmanx;
-  procedure OpenInputDevices;
-  procedure CloseInputDevices;
+  procedure ShutdownDispmanX;
+  procedure InitTouchInput;
+  procedure ShutdownTouchInput;
   procedure CollectAndDispatchTouchEvents;
 {$endif read_application_interface}
 
@@ -73,17 +85,17 @@ begin
 
   //Application.InitDispmanX;
 
-  WritelnLog('CastleWindow', 'Opening DispmanX display...');
+  WritelnLog('CastleWindowCustom', 'Opening DispmanX display...');
   dispman_display := vc_dispmanx_display_open(0 {LCD});
   if dispman_display = 0 then raise Exception.Create('Failed to open dispmanx display');
-  WritelnLog('CastleWindow', 'done.');
+  WritelnLog('CastleWindowCustom', 'done.');
 
-  WritelnLog('CastleWindow', 'Creating DispmanX window from display...');
+  WritelnLog('CastleWindowCustom', 'Creating DispmanX window from display...');
   dst_rect.x := 0;
   dst_rect.y := 0;
   dst_rect.width  := Application.ScreenWidth;
   dst_rect.height := Application.ScreenHeight;
-  WritelnLog('CastleWindow', 'screen size: %dx%d', [Application.ScreenWidth, Application.ScreenHeight]);
+  WritelnLog('CastleWindowCustom', 'screen size: %dx%d', [Application.ScreenWidth, Application.ScreenHeight]);
   src_rect.x := 0;
   src_rect.y := 0;
   src_rect.width  := Application.ScreenWidth  shl 16;
@@ -100,7 +112,14 @@ begin
   vc_dispmanx_update_submit_sync(dispman_update);
   vc_dispmanx_element_remove(dispman_update, dispman_element);
 
-  WritelnLog('CastleWindow', 'done.');
+  WritelnLog('CastleWindowCustom', 'done.');
+end;
+
+procedure TCastleWindowCustom.CleanupDispmanX;
+begin
+  WritelnLog('CastleWindowCustom', 'Closing DispmanX display...');
+  if vc_dispmanx_display_close(dispman_display) <> 0 then WritelnWarning('TCastleWindowCustom', 'Error');
+  WritelnLog('CastleWindowCustom', 'Done.');
 end;
 
 procedure TCastleWindowCustom.InitEGL;
@@ -130,61 +149,70 @@ var
   configs: array of EGLConfig;
   {$endif}
 begin
-  WritelnLog('CastleWindow', 'Obtaining EGL default display...');
+  WritelnLog('TCastleWindowCustom', 'Obtaining EGL default display...');
   display := eglGetDisplay(EGL_DEFAULT_DISPLAY);
   if display = nil then raise Exception.Create('Failed to obtain EGL default display');
-  WritelnLog('CastleWindow', 'done.');
+  WritelnLog('TCastleWindowCustom', 'done.');
 
-  WritelnLog('CastleWindow', 'Initializing EGL display connection...');
+  WritelnLog('TCastleWindowCustom', 'Initializing EGL display connection...');
   Res := eglInitialize(display, @Major, @Minor);
   if Res = EGL_FALSE then raise Exception.Create('Failed to initialize the EGL display');
-  WritelnLog('CastleWindow', 'done, EGL version is %d.%d', [Major, Minor]);
+  WritelnLog('TCastleWindowCustom', 'done, EGL version is %d.%d', [Major, Minor]);
 
   {$ifdef NOT_DEFINED}
-  WritelnLog('CastleWindow', 'Obtaining EGL display configs...');
+  WritelnLog('TCastleWindowCustom', 'Obtaining EGL display configs...');
   eglGetConfigs(display, nil, 0, @num_configs);
   // TODO: abort if num_configs = 0
   SetLength(configs, num_configs);
   eglGetConfigs(display, @configs, num_configs, @num_configs);
-  WritelnLog('CastleWindow', 'obtained %d configs', [num_configs]);
+  WritelnLog('TCastleWindowCustom', 'obtained %d configs', [num_configs]);
   {$endif}
 
-  WritelnLog('CastleWindow', 'Choosing a display config...');
+  WritelnLog('TCastleWindowCustom', 'Choosing a display config...');
   Res := eglChooseConfig(display, @config_attribs, @config, 1, @num_configs);
   if Res <> EGL_TRUE then raise Exception.Create('Failed to choose a display configuration');
-  WritelnLog('CastleWindow', 'done.');
+  WritelnLog('TCastleWindowCustom', 'done.');
 
-  WritelnLog('CastleWindow', 'Binding the OpenGL ES API...');
+  WritelnLog('TCastleWindowCustom', 'Binding the OpenGL ES API...');
   Res := eglBindAPI(EGL_OPENGL_ES_API);
   if Res <> EGL_TRUE then raise Exception.Create('Failed to bind OpenGL ES API');
-  WritelnLog('CastleWindow', 'done.');
+  WritelnLog('TCastleWindowCustom', 'done.');
 
-  WritelnLog('CastleWindow', 'Creating EGL context...');
+  WritelnLog('TCastleWindowCustom', 'Creating EGL context...');
   context := eglCreateContext(display, config, EGL_NO_CONTEXT, @context_attribs);
   if context = nil then raise Exception.Create('Failed to create EGL context');
-  WritelnLog('CastleWindow', 'done.');
+  WritelnLog('TCastleWindowCustom', 'done.');
 end;
 
 procedure TCastleWindowCustom.EGLFromDispmanX;
 var
   Res: EGLboolean;
 begin
-  WritelnLog('CastleWindow', 'Creating a Surface for the native Window...');
+  WritelnLog('TCastleWindowCustom', 'Creating a Surface for the native Window...');
   // Note: egl.pas defines EGLNativeWindowType = Pointer
   surface := eglCreateWindowSurface(display, config, @native_window, nil);
   if surface = EGL_NO_SURFACE then raise Exception.Create('Failed to create Window Surface');
-  WritelnLog('CastleWindow', 'done.');
+  WritelnLog('TCastleWindowCustom', 'done.');
 
-  WritelnLog('CastleWindow', 'Connecting the rendering context to the Surface...');
+  WritelnLog('TCastleWindowCustom', 'Connecting the rendering context to the Surface...');
   Res := eglMakeCurrent(display, surface, surface, context);
   if Res = EGL_FALSE then raise Exception.Create('Failed to connect the rendering context to the Surface');
-  WritelnLog('CastleWindow', 'done.');
+  WritelnLog('TCastleWindowCustom', 'done.');
 
   // TODO: the following may not be useful, I just copied it from rasperf3d
   eglSwapInterval(display, 0);  // no vsync
 end;
 
-// TODO: all the cleanup!
+procedure TCastleWindowCustom.CleanupEGL;
+begin
+  WritelnLog('TCastleWindowCustom', 'Cleaning up EGL');
+  if (surface <> EGL_NO_SURFACE) and (eglDestroySurface(display, surface) <> 0) then
+    WritelnLog('TCastleWindowCustom', 'EGL surface destroyed ok');
+  if (context <> EGL_NO_CONTEXT) and (eglDestroyContext(display, context) <> 0) then
+    WritelnLog('TCastleWindowCustom', 'EGL context destroyed ok');
+  if (display <> EGL_NO_DISPLAY) and (eglTerminate(display) <> 0) then
+    WritelnLog('TCastleWindowCustom', 'EGL display terminated ok');
+end;
 
 
 { Standard methods }
@@ -259,13 +287,15 @@ end;
 
 procedure TCastleWindowCustom.SwapBuffers;
 begin
-  //WritelnLog('CastleWindow', 'SwapBuffers');
+  //WritelnLog('TCastleWindowCustom', 'SwapBuffers');
   if eglSwapBuffers(Display, Surface) = EGL_FALSE then
-    WritelnWarning('CastleWindow', 'Cannot swap buffers (this is normal if app is no longer active)');
+    WritelnWarning('TCastleWindowCustom', 'Cannot swap buffers (this is normal if app is no longer active)');
 end;
 
 procedure TCastleWindowCustom.OpenBackend;
 begin
+  // TODO: honour: DoubleBuffer, StencilBits, DepthBits, AlphaBits, AccumBits, MultiSampling
+  
   InitDispmanX;
   InitEGL;
   EGLFromDispmanX;
@@ -280,8 +310,9 @@ end;
 
 procedure TCastleWindowCustom.CloseBackend;
 begin
-  WritelnLog('CastleWindow', 'CloseBackend');
   { TODO (destroy OpenGL context, hide window; counterpart to OpenBackend) }
+  WritelnLog('TCastleWindowCustom', 'CloseBackend');
+  CleanupEGL;
 end;
 
 procedure TCastleWindowCustom.SetCaption(const Part: TCaptionPart; const Value: string);
@@ -293,9 +324,9 @@ end;
 procedure TCastleWindowCustom.BackendMakeCurrent;
 begin
   Assert(not Closed);
-  WritelnLog('CastleWindow_dispmanx', 'BackendMakeCurrent');
+  WritelnLog('CastleWindowCustom', 'BackendMakeCurrent');
   if eglMakeCurrent(Display, Surface, Surface, Context) = EGL_FALSE then
-    WritelnWarning('CastleWindow', 'Cannot make context current: ');
+    WritelnWarning('TCastleWindowCustom', 'Cannot make context current: ');
 end;
 
 procedure TCastleWindowCustom.SetCursor(const Value: TMouseCursor);
@@ -373,34 +404,39 @@ var
 begin
   InitializeLog;
   BCMHostInit;
-  WritelnLog('DispmanX Application', 'BCM host initialized.');
+  WritelnLog('TCastleApplication', 'BCM host initialized.');
 
-  Success := BCMHostGraphicsGetDisplaySize(0 {LCD}, screen_width, screen_height);
-  if Success < 0 then raise Exception.Create('Failed to obtain LCD display size');
-  WritelnLog('DispmanX Application', 'LCD display size obtained: %dx%d', [screen_width, screen_height]);
+  Success := BCMHostGraphicsGetDisplaySize(0 {LCD}, FScreenWidth, FScreenHeight);
+  if Success < 0 then raise Exception.Create('Failed to obtain LCD display size'); // TODO: custom exception class ?
+  WritelnLog('TCastleApplication', 'LCD display size obtained: %dx%d', [FScreenWidth, FScreenHeight]);
 end;
 
-procedure TCastleApplication.ShutdownDispmanx;
+procedure TCastleApplication.ShutdownDispmanX;
 begin
-  WritelnWarning('TCastleApplication_dispmanx.ShutdownDispmanX', 'NOT IMPLEMENTED YET');
+  BCMHostDeinit;
+  WritelnWarning('TCastleApplication_dispmanx.ShutdownDispmanX', 'BCM host deinitialized');
 end;
 
-procedure TCastleApplication.OpenInputDevices;
+procedure TCastleApplication.InitTouchInput;
+var
+  i: Integer;
 begin
-  //touch_file := TFileStream.Create('/dev/input/event2', fmOpenRead);
-  //touch_fd := 0;
-  touch_fd := fpOpen('/dev/input/event2', O_RdOnly or O_NonBlock);
+  // Open touch input device
+  FTouchFd := fpOpen('/dev/input/event2', O_RdOnly or O_NonBlock);
+  if FTouchFd < 0 then raise Exception.Create('Failed to open touch input device'); // TODO: custom exception class ?
+  // Initialize touch states (5 max)
+  for i := Low(FMultiTouch) to High(FMultiTouch) do FMultiTouch[i].State := tsInactive;
 end;
 
-procedure TCastleApplication.CloseInputDevices;
+procedure TCastleApplication.ShutdownTouchInput;
 begin
-  //touch_file.Destroy;
-  if touch_fd > 2 then begin fpClose(touch_fd); touch_fd := -1; end;
+  if FTouchFd > 2 then begin fpClose(FTouchFd); FTouchFd := -1; end;
 end;
 
 procedure TCastleApplication.CollectAndDispatchTouchEvents;
 const
-  // TODO: those definitions belong ..elsewhere
+  // Event types
+  // TODO: those definitions belong ..elsewhere; ask michalis where
   EV_SYN = $00;
   EV_KEY = $01;
   EV_REL = $02;
@@ -415,18 +451,78 @@ const
   EV_FF_STATUS  = $17;
   EV_MAX = $1f;
   EV_CNT =(EV_MAX+1);
+
+  // Synchronization events
+  SYN_REPORT    = 0;
+  SYN_MT_REPORT = 2;
+
+  // Multi-touch
+  ABS_MT_SLOT        = $2f;
+  ABS_MT_POSITION_X  = $35;
+  ABS_MT_POSITION_Y  = $36;
+  ABS_MT_TRACKING_ID = $39;
+
 type 
-  InputEvent = packed record
+  TLinuxInputEvent = packed record
     time: timeval; //sec, nsec: UInt32;
     _type, code: UInt16;
-    value: UInt32;
+    value: Int32;
   end;
-const
-  ZeroTime: timeval = (tv_sec: 0; tv_usec: 0);
+
+  procedure ReportMultiTouch;
+  begin
+    with FMultiTouch[FTouchSlot] do
+    begin
+      case State of
+        tsInactive: 
+          begin
+            LastPosition := CurrentPosition; // TODO: correct ? reporting same position twice
+            WritelnLog('TCastleApplication', 'MouseDown: %f, %f', [CurrentPosition.X, CurrentPosition.Y]);
+            GuessedMainWindow.DoMouseDown(CurrentPosition, CastleKeysMouse.mbLeft);
+            State := tsDown;
+            LastPosition := CurrentPosition;
+          end;
+        tsDown:
+          begin
+            WritelnLog('TCastleApplication', 'MouseMotion: %f, %f', [CurrentPosition.X, CurrentPosition.Y]);
+            GuessedMainWindow.DoMotion(InputMotion(LastPosition, CurrentPosition, [], FTouchSlot));
+            LastPosition := CurrentPosition;
+          end;
+        tsup:
+          begin
+            WritelnLog('TCastleApplication', 'MouseUp: %f, %f', [CurrentPosition.X, CurrentPosition.Y]);
+            GuessedMainWindow.DoMouseUp(CurrentPosition, CastleKeysMouse.mbLeft);
+            State := tsInactive;
+          end;
+      end;
+    end;
+  end;
+
+  procedure HandleSYN(var Event: TLinuxInputEvent);
+  begin
+    case Event.Code of
+      SYN_REPORT: ReportMultiTouch;
+    end;
+  end;
+
+  procedure HandleABS(var Event: TLinuxInputEvent);
+  begin
+    case Event.Code of
+      ABS_MT_SLOT       : FTouchSlot := Event.value; // WritelnLog('MT', 'Slot: %u', [Event.value]);
+      ABS_MT_POSITION_X : FMultiTouch[FTouchSlot].CurrentPosition.X := Event.value; // WritelnLog('MT', 'X: %u', [Event.value]);
+      ABS_MT_POSITION_Y : FMultiTouch[FTouchSlot].CurrentPosition.Y := Event.value;  // WritelnLog('MT', 'Y: %u', [Event.value]);
+      ABS_MT_TRACKING_ID: if Event.value = -1 then FMultiTouch[FTouchSlot].State := tsUp;
+      //else
+      //  WritelnLog('TCastleApplication', 'Unhandled ABS code: %d', [Event.Code]);
+    end;
+  end;
+
+//const
+//  ZeroTime: timeval = (tv_sec: 0; tv_usec: 0);
 var
-  FDS: TFDSet;
+  //FDS: TFDSet;
   Buffer: array[0..1023] of Byte;
-  PEvent: ^InputEvent;
+  PEvent: ^TLinuxInputEvent;
   Count, Offset: Longint;
 begin
   //WritelnLog('CollectAndDispatchTouchEvents', 'touch file handle: %d', [touch_file.Handle]);
@@ -436,15 +532,19 @@ begin
   //begin
     //WritelnLog('CollectAndDispatchTouchEvents', 'input!');
     //Count := touch_file.Read(Buffer, SizeOf(Buffer));
-    Count := fpRead(touch_fd, Buffer, SizeOf(Buffer));
+    Count := fpRead(FTouchFd, Buffer, SizeOf(Buffer));
     Offset := 0;
     while Count > 0 do
     begin
       PEvent := @Buffer[Offset];
-      Offset += SizeOf(InputEvent);
-      Count -= SizeOf(InputEvent);
-      WritelnLog('TCastleApplication_dispmanx.CollectAndDispatchTouchEvents', 'Time: %u.%u: %u', [
-        PEvent^.time.tv_sec, PEvent^.time.tv_usec, PEvent^._type]);
+      Offset += SizeOf(TLinuxInputEvent);
+      Count -= SizeOf(TLinuxInputEvent);
+      //WritelnLog('TCastleApplication_dispmanx.CollectAndDispatchTouchEvents', 'Time: %u.%u: %u', [
+      //  PEvent^.time.tv_sec, PEvent^.time.tv_usec, PEvent^._type]);
+      case PEvent^._type of 
+        EV_SYN: HandleSYN(PEvent^);
+        EV_ABS: HandleABS(PEvent^);
+      end;
     end;
   //end;
 end;
@@ -456,13 +556,13 @@ begin
   { TODO (initialize backend-specific stuff for the whole application;
     may do nothing if you don't need anything) }
   InitDispmanX;
-  OpenInputDevices;
+  InitTouchInput;
 end;
 
 procedure TCastleApplication.DestroyBackend;
 begin
-  CloseInputDevices;
-  { TODO }
+  ShutdownTouchInput;
+  ShutdownDispmanX;
 end;
 
 function TCastleApplication.ProcessMessage(WaitForMessage, WaitToLimitFPS: boolean): boolean;
@@ -500,12 +600,12 @@ end;
 
 function TCastleApplication.ScreenWidth: integer;
 begin
-  Result := screen_width;
+  Result := FScreenWidth;
 end;
 
 function TCastleApplication.ScreenHeight: integer;
 begin
-  Result := screen_height;
+  Result := FScreenHeight;
 end;
 
 function TCastleApplication.ScreenStatusBarScaledHeight: Cardinal;
