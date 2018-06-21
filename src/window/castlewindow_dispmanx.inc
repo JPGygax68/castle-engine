@@ -28,7 +28,7 @@ DispmanX, VC4, // CastleGLES20,
 {$endif}
 
 {$ifdef read_implementation_uses}
-BaseUnix,
+BaseUnix, LinuxEvents,
 {$endif}
 
 {$ifdef read_window_interface}
@@ -59,14 +59,14 @@ type
 private
   // TODO: support multiple screens!
   FScreenWidth, FScreenHeight: UInt32;
-  FTouchFd: Longint;
+  FInputFds: array of Longint;
   FTouchSlot: UInt32;
   FMultiTouch: TMultiTouch;
 
   procedure InitDispmanX;
   procedure ShutdownDispmanX;
-  procedure InitTouchInput;
-  procedure ShutdownTouchInput;
+  procedure OpenAllInputDevices;
+  procedure CloseAllInputDevices;
   procedure CollectAndDispatchTouchEvents;
 {$endif read_application_interface}
 
@@ -153,6 +153,16 @@ begin
   display := eglGetDisplay(EGL_DEFAULT_DISPLAY);
   if display = nil then raise Exception.Create('Failed to obtain EGL default display');
   WritelnLog('TCastleWindowCustom', 'done.');
+
+  // eglQueryString() only return nil pointers
+  {$ifdef NOT_DEFINED}
+  WritelnLog('TCastleWindowCustom', 'Dumping display information...');
+  WritelnLog('TCastleWindowCustom', 'APIs      : ' + StrPas(eglQueryString(display, EGL_CLIENT_APIS)));
+  WritelnLog('TCastleWindowCustom', 'Vendor    : ' + StrPas(eglQueryString(display, EGL_VENDOR)     ));
+  WritelnLog('TCastleWindowCustom', 'Version   : ' + StrPas(eglQueryString(display, EGL_VERSION)    ));
+  WritelnLog('TCastleWindowCustom', 'Extensions: ' + StrPas(eglQueryString(display, EGL_EXTENSIONS) ));
+  WritelnLog('TCastleWindowCustom', 'Display info dumped.');
+  {$endif}
 
   WritelnLog('TCastleWindowCustom', 'Initializing EGL display connection...');
   Res := eglInitialize(display, @Major, @Minor);
@@ -405,7 +415,6 @@ begin
   InitializeLog;
   BCMHostInit;
   WritelnLog('TCastleApplication', 'BCM host initialized.');
-
   Success := BCMHostGraphicsGetDisplaySize(0 {LCD}, FScreenWidth, FScreenHeight);
   if Success < 0 then raise Exception.Create('Failed to obtain LCD display size'); // TODO: custom exception class ?
   WritelnLog('TCastleApplication', 'LCD display size obtained: %dx%d', [FScreenWidth, FScreenHeight]);
@@ -417,103 +426,123 @@ begin
   WritelnWarning('TCastleApplication_dispmanx.ShutdownDispmanX', 'BCM host deinitialized');
 end;
 
-procedure TCastleApplication.InitTouchInput;
+procedure TCastleApplication.OpenAllInputDevices; // TODO: better name
+const
+  ParentDir: String = '/dev/input/';
+var
+  SR: TSearchRec;
+  Filename: String;
+  i: Integer;
+begin
+  // Open all input file
+  WritelnLog('TCastleApplication', 'Opening all input devices');
+  i := 0;
+  if FindFirst(ParentDir + 'event*', (faAnyFile And Not faDirectory) , SR) = 0 then
+  begin
+    repeat
+      Filename := ParentDir + SR.Name;
+      SetLength(FInputFds, i + 1);
+      WritelnLog('TCastleApplication', 'Opening input file "%s"', [Filename]);
+      FInputFds[i] := fpOpen(Filename, O_RdOnly or O_NonBlock);
+      Inc(i);
+    until FindNext(SR) <> 0;
+  end;
+  FindClose(SR);
+
+  // Initialize touch states (5 max)
+  for i := Low(FMultiTouch) to High(FMultiTouch) do FMultiTouch[i].State := tsInactive;
+  // Special case: multi-touch "finger 0" is treated the same as the mouse (or mice)
+  FMultiTouch[0].CurrentPosition.X := ScreenWidth  / 2;
+  FMultiTouch[0].CurrentPosition.Y := ScreenHeight / 2;
+end;
+
+
+procedure TCastleApplication.CloseAllInputDevices;
 var
   i: Integer;
 begin
-  // Open touch input device
-  FTouchFd := fpOpen('/dev/input/event2', O_RdOnly or O_NonBlock);
-  if FTouchFd < 0 then raise Exception.Create('Failed to open touch input device'); // TODO: custom exception class ?
-  // Initialize touch states (5 max)
-  for i := Low(FMultiTouch) to High(FMultiTouch) do FMultiTouch[i].State := tsInactive;
-end;
-
-procedure TCastleApplication.ShutdownTouchInput;
-begin
-  if FTouchFd > 2 then begin fpClose(FTouchFd); FTouchFd := -1; end;
+  WritelnLog('TCastleApplication', 'Closing all %d input devices', [Length(FInputFds)]);
+  for i := 0 to High(FInputFds) do fpClose(FInputFds[i]);
+  SetLength(FInputFds, 0);
 end;
 
 procedure TCastleApplication.CollectAndDispatchTouchEvents;
-const
-  // Event types
-  // TODO: those definitions belong ..elsewhere; ask michalis where
-  EV_SYN = $00;
-  EV_KEY = $01;
-  EV_REL = $02;
-  EV_ABS = $03;
-  EV_MSC = $04;
-  EV_SW  = $05;
-  EV_LED = $11;
-  EV_SND = $12;
-  EV_REP = $14;
-  EV_FF  = $15;
-  EV_PWR = $16;
-  EV_FF_STATUS  = $17;
-  EV_MAX = $1f;
-  EV_CNT =(EV_MAX+1);
-
-  // Synchronization events
-  SYN_REPORT    = 0;
-  SYN_MT_REPORT = 2;
-
-  // Multi-touch
-  ABS_MT_SLOT        = $2f;
-  ABS_MT_POSITION_X  = $35;
-  ABS_MT_POSITION_Y  = $36;
-  ABS_MT_TRACKING_ID = $39;
-
-type 
-  TLinuxInputEvent = packed record
-    time: timeval; //sec, nsec: UInt32;
-    _type, code: UInt16;
-    value: Int32;
-  end;
-
+  
   procedure ReportMultiTouch;
   begin
     with FMultiTouch[FTouchSlot] do
     begin
       case State of
-        tsInactive: 
+        tsInactive: // "finger down" is implicit when first position is received
           begin
             LastPosition := CurrentPosition; // TODO: correct ? reporting same position twice
-            WritelnLog('TCastleApplication', 'MouseDown: %f, %f', [CurrentPosition.X, CurrentPosition.Y]);
-            GuessedMainWindow.DoMouseDown(CurrentPosition, CastleKeysMouse.mbLeft);
+            WritelnLog('TCastleApplication', 'MouseDown: %f, %f, finger %d', [CurrentPosition.X, CurrentPosition.Y, FTouchSlot]);
+            GuessedMainWindow.DoMouseDown(CurrentPosition, CastleKeysMouse.mbLeft, FTouchSlot);
             State := tsDown;
             LastPosition := CurrentPosition;
           end;
         tsDown:
           begin
-            WritelnLog('TCastleApplication', 'MouseMotion: %f, %f', [CurrentPosition.X, CurrentPosition.Y]);
+            WritelnLog('TCastleApplication', 'MouseMotion: %f, %f -> %f, %f, finger %d', [LastPosition.X, LastPosition.Y, 
+              CurrentPosition.X, CurrentPosition.Y, FTouchSlot]);
             GuessedMainWindow.DoMotion(InputMotion(LastPosition, CurrentPosition, [], FTouchSlot));
             LastPosition := CurrentPosition;
           end;
-        tsup:
+        tsup: // "finger up" was registered via a tracking id of -1
           begin
-            WritelnLog('TCastleApplication', 'MouseUp: %f, %f', [CurrentPosition.X, CurrentPosition.Y]);
-            GuessedMainWindow.DoMouseUp(CurrentPosition, CastleKeysMouse.mbLeft);
+            WritelnLog('TCastleApplication', 'MouseUp: %f, %f, finger %d', [CurrentPosition.X, CurrentPosition.Y, FTouchSlot]);
+            GuessedMainWindow.DoMouseUp(CurrentPosition, CastleKeysMouse.mbLeft, FTouchSlot);
             State := tsInactive;
           end;
       end;
     end;
+    FTouchSlot := 0;
   end;
 
   procedure HandleSYN(var Event: TLinuxInputEvent);
   begin
     case Event.Code of
       SYN_REPORT: ReportMultiTouch;
+      SYN_MT_REPORT: WritelnLog('TCastleApplication', 'SYN_MT_REPORT !!');
+      // TODO: SYN_DROPPED
     end;
+  end;
+
+  procedure SelectNewSlot(Slot: Longint);
+  begin
+    ReportMultiTouch;
+    FTouchSlot := Slot;
   end;
 
   procedure HandleABS(var Event: TLinuxInputEvent);
   begin
     case Event.Code of
-      ABS_MT_SLOT       : FTouchSlot := Event.value; // WritelnLog('MT', 'Slot: %u', [Event.value]);
-      ABS_MT_POSITION_X : FMultiTouch[FTouchSlot].CurrentPosition.X := Event.value; // WritelnLog('MT', 'X: %u', [Event.value]);
-      ABS_MT_POSITION_Y : FMultiTouch[FTouchSlot].CurrentPosition.Y := Event.value;  // WritelnLog('MT', 'Y: %u', [Event.value]);
+      { ABS_X             : begin WritelnLog('TCastleApplication', 'ABS_X'); FMultiTouch[0].CurrentPosition.X := Event.value; end;
+      ABS_Y             : FMultiTouch[0].CurrentPosition.Y := Event.value;
+      ABS_RX            : begin WritelnLog('TCastleApplication', 'ABS_RX'); FMultiTouch[0].CurrentPosition.X := Event.value; end;
+      ABS_RY            : FMultiTouch[0].CurrentPosition.Y := Event.value; }
+      ABS_MT_SLOT       : SelectNewSlot(Event.value);
+      ABS_MT_POSITION_X : FMultiTouch[FTouchSlot].CurrentPosition.X := Event.value;
+      ABS_MT_POSITION_Y : FMultiTouch[FTouchSlot].CurrentPosition.Y := FScreenHeight - Event.value;
       ABS_MT_TRACKING_ID: if Event.value = -1 then FMultiTouch[FTouchSlot].State := tsUp;
-      //else
-      //  WritelnLog('TCastleApplication', 'Unhandled ABS code: %d', [Event.Code]);
+      else
+        ; //WritelnLog('TCastleApplication', 'Unhandled ABS code: %d', [Event.Code]);
+    end;
+  end;
+
+  procedure HandleKEY(var Event: TLinuxInputEvent);
+  begin
+    WritelnWarning('TCastleApplication', 'HandleKEY not implemented yet');
+  end;
+
+  procedure HandleREL(var Event: TLinuxInputEvent);
+  begin
+    //WritelnLog('TCastleApplication', 'REL: code = %d, value = %d', [Event.code, Event.value]);
+    case Event.Code of
+      REL_X             : FMultiTouch[0].CurrentPosition.X := FMultiTouch[0].CurrentPosition.X + Event.value;
+      REL_Y             : FMultiTouch[0].CurrentPosition.Y := FMultiTouch[0].CurrentPosition.Y + Event.value;
+      else
+        WritelnLog('TCastleApplication', 'Unhandled REL code: %d', [Event.Code]);
     end;
   end;
 
@@ -524,6 +553,7 @@ var
   Buffer: array[0..1023] of Byte;
   PEvent: ^TLinuxInputEvent;
   Count, Offset: Longint;
+  i: Integer;
 begin
   //WritelnLog('CollectAndDispatchTouchEvents', 'touch file handle: %d', [touch_file.Handle]);
   //fpfd_zero(FDS);
@@ -532,10 +562,15 @@ begin
   //begin
     //WritelnLog('CollectAndDispatchTouchEvents', 'input!');
     //Count := touch_file.Read(Buffer, SizeOf(Buffer));
-    Count := fpRead(FTouchFd, Buffer, SizeOf(Buffer));
+  
+  // Read pending input from ALL input devices
+  for i := 0 to High(FInputFds) do
+  begin
+    Count := fpRead(FInputFds[i], Buffer, SizeOf(Buffer));
     Offset := 0;
     while Count > 0 do
     begin
+      WritelnLog('TCastleApplication', 'Got input from input device #%d', [i]);
       PEvent := @Buffer[Offset];
       Offset += SizeOf(TLinuxInputEvent);
       Count -= SizeOf(TLinuxInputEvent);
@@ -544,9 +579,17 @@ begin
       case PEvent^._type of 
         EV_SYN: HandleSYN(PEvent^);
         EV_ABS: HandleABS(PEvent^);
+        EV_KEY: HandleKEY(PEvent^);
+        EV_REL: HandleREL(PEvent^);
+        // TODO?: EV_SW: ... switches (are there any on Raspberry ?)
+        // TODO?: EV_MSC: ... miscellaneous
+        // TODO?: EV_LED: ... ?
+        // TODO?: EV_REP: ... auto-repeats
+        else
+          WritelnLog('TCastleApplication', 'Unhandled event type: %u', [PEvent^._type]);
       end;
     end;
-  //end;
+  end;
 end;
 
 { Standard methods }
@@ -556,12 +599,12 @@ begin
   { TODO (initialize backend-specific stuff for the whole application;
     may do nothing if you don't need anything) }
   InitDispmanX;
-  InitTouchInput;
+  OpenAllInputDevices;
 end;
 
 procedure TCastleApplication.DestroyBackend;
 begin
-  ShutdownTouchInput;
+  CloseAllInputDevices;
   ShutdownDispmanX;
 end;
 
