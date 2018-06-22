@@ -52,6 +52,19 @@ const
   REL_MAX            = $0f;
   REL_CNT            = (REL_MAX + 1);
 
+  // MSC events ---------------------------------
+  
+  // Mouse buttons
+  BTN_MOUSE          = $110;
+  BTN_LEFT           = $110;
+  BTN_RIGHT          = $111;
+  BTN_MIDDLE         = $112;
+  BTN_SIDE           = $113;
+  BTN_EXTRA          = $114;
+  BTN_FORWARD        = $115;
+  BTN_BACK           = $116;
+  BTN_TASK           = $117;
+
 type 
 
   TLinuxInputEvent = packed record

@@ -28,7 +28,7 @@ DispmanX, VC4, // CastleGLES20,
 {$endif}
 
 {$ifdef read_implementation_uses}
-BaseUnix, LinuxEvents,
+BaseUnix, LinuxEvents, Keyboard,
 {$endif}
 
 {$ifdef read_window_interface}
@@ -68,6 +68,7 @@ private
   procedure OpenAllInputDevices;
   procedure CloseAllInputDevices;
   procedure CollectAndDispatchTouchEvents;
+  procedure HandleKeyboardInput;
 {$endif read_application_interface}
 
 {$ifdef read_implementation}
@@ -476,27 +477,40 @@ procedure TCastleApplication.CollectAndDispatchTouchEvents;
         tsInactive: // "finger down" is implicit when first position is received
           begin
             LastPosition := CurrentPosition; // TODO: correct ? reporting same position twice
-            WritelnLog('TCastleApplication', 'MouseDown: %f, %f, finger %d', [CurrentPosition.X, CurrentPosition.Y, FTouchSlot]);
+            //WritelnLog('TCastleApplication', 'MouseDown: %f, %f, finger %d', [CurrentPosition.X, CurrentPosition.Y, FTouchSlot]);
             GuessedMainWindow.DoMouseDown(CurrentPosition, CastleKeysMouse.mbLeft, FTouchSlot);
             State := tsDown;
             LastPosition := CurrentPosition;
           end;
         tsDown:
           begin
-            WritelnLog('TCastleApplication', 'MouseMotion: %f, %f -> %f, %f, finger %d', [LastPosition.X, LastPosition.Y, 
-              CurrentPosition.X, CurrentPosition.Y, FTouchSlot]);
+            //WritelnLog('TCastleApplication', 'MouseMotion: %f, %f -> %f, %f, finger %d', [LastPosition.X, LastPosition.Y, 
+            //  CurrentPosition.X, CurrentPosition.Y, FTouchSlot]);
             GuessedMainWindow.DoMotion(InputMotion(LastPosition, CurrentPosition, [], FTouchSlot));
             LastPosition := CurrentPosition;
           end;
         tsup: // "finger up" was registered via a tracking id of -1
           begin
-            WritelnLog('TCastleApplication', 'MouseUp: %f, %f, finger %d', [CurrentPosition.X, CurrentPosition.Y, FTouchSlot]);
+            //WritelnLog('TCastleApplication', 'MouseUp: %f, %f, finger %d', [CurrentPosition.X, CurrentPosition.Y, FTouchSlot]);
             GuessedMainWindow.DoMouseUp(CurrentPosition, CastleKeysMouse.mbLeft, FTouchSlot);
             State := tsInactive;
           end;
       end;
     end;
     FTouchSlot := 0;
+  end;
+
+  procedure ReportMouseButton(BtnNum: Integer; Down: Boolean);
+  var
+    Position: TVector2;
+    Button: CastleKeysMouse.TMouseButton;
+  begin
+    Position := FMultiTouch[0].CurrentPosition;
+    Button := TMouseButton(Integer(CastleKeysMouse.mbLeft) + BtnNum);
+    if Down then
+      GuessedMainWindow.DoMouseDown(Position, Button, 0)
+    else
+      GuessedMainWindow.DoMouseUp  (Position, Button, 0);
   end;
 
   procedure HandleSYN(var Event: TLinuxInputEvent);
@@ -532,7 +546,12 @@ procedure TCastleApplication.CollectAndDispatchTouchEvents;
 
   procedure HandleKEY(var Event: TLinuxInputEvent);
   begin
-    WritelnWarning('TCastleApplication', 'HandleKEY not implemented yet');
+    //WritelnWarning('TCastleApplication', 'KEY event: code = %d, value = %d', [Event.code, Event.value]);
+    case Event.Code of
+      BTN_MOUSE..BTN_TASK: ReportMouseButton(Event.Code - BTN_MOUSE, Event.value <> 0);
+      else
+        ; //WritelnWarning('TCastleApplication', 'Unhandled key: code = %d, value = %d', [Event.code, Event.value]);
+    end;
   end;
 
   procedure HandleREL(var Event: TLinuxInputEvent);
@@ -543,6 +562,16 @@ procedure TCastleApplication.CollectAndDispatchTouchEvents;
       REL_Y             : FMultiTouch[0].CurrentPosition.Y := FMultiTouch[0].CurrentPosition.Y + Event.value;
       else
         WritelnLog('TCastleApplication', 'Unhandled REL code: %d', [Event.Code]);
+    end;
+  end;
+
+  procedure HandleMSC(var Event: TLinuxInputEvent);
+  begin
+    //WritelnLog('TCastleApplication', 'MSC: code = %d, value = %d', [Event.code, Event.value]);
+    case Event.Code of
+      1: ;
+      else
+        WritelnLog('TCastleApplication', 'Unhandled MSC code: %d', [Event.Code]);
     end;
   end;
 
@@ -570,7 +599,7 @@ begin
     Offset := 0;
     while Count > 0 do
     begin
-      WritelnLog('TCastleApplication', 'Got input from input device #%d', [i]);
+      //WritelnLog('TCastleApplication', 'Got input from input device #%d', [i]);
       PEvent := @Buffer[Offset];
       Offset += SizeOf(TLinuxInputEvent);
       Count -= SizeOf(TLinuxInputEvent);
@@ -582,13 +611,48 @@ begin
         EV_KEY: HandleKEY(PEvent^);
         EV_REL: HandleREL(PEvent^);
         // TODO?: EV_SW: ... switches (are there any on Raspberry ?)
-        // TODO?: EV_MSC: ... miscellaneous
+        EV_MSC: handleMSC(PEvent^);
         // TODO?: EV_LED: ... ?
         // TODO?: EV_REP: ... auto-repeats
         else
           WritelnLog('TCastleApplication', 'Unhandled event type: %u', [PEvent^._type]);
       end;
     end;
+  end;
+end;
+
+procedure TCastleApplication.HandleKeyboardInput;
+var
+  K, T, S: TKeyEvent;
+begin
+  K := PollKeyEvent;
+  if K <> 0 then
+  begin
+    K := GetKeyEvent;
+    T := TranslateKeyEvent(K);
+    if T <> 0 then
+    begin
+      WritelnLog('TCastleApplication', 'Translated key event: "%s"', [KeyEventToString(T)]);
+      case GetKeyEventFlags(K) of
+        kbASCII   : ;
+        kbUniCode : ;
+        kbFnKey   : ;
+        kbPhys    : ;
+        kbReleased: ;
+      end;
+    end 
+    else begin
+      WritelnLog('TCastleApplication', 'Raw key event: "%s"', [KeyEventToString(K)]);
+      case GetKeyEventFlags(K) of
+        kbASCII   : ;
+        kbUniCode : ;
+        kbFnKey   : ;
+        kbPhys    : ;
+        kbReleased: ;
+      end;
+    end;
+    S := GetKeyEventShiftState(K);
+    WritelnLog('TCastleApplication', 'Shift state: %s', [KeyEventToString(S)]);
   end;
 end;
 
@@ -600,12 +664,15 @@ begin
     may do nothing if you don't need anything) }
   InitDispmanX;
   OpenAllInputDevices;
+  InitKeyboard;
 end;
 
 procedure TCastleApplication.DestroyBackend;
 begin
   CloseAllInputDevices;
   ShutdownDispmanX;
+  // DoneKeyboard; NOTE: it may be better not to call this at all, in case the Keyboard unit
+  // is used somewhere else.
 end;
 
 function TCastleApplication.ProcessMessage(WaitForMessage, WaitToLimitFPS: boolean): boolean;
@@ -615,6 +682,7 @@ begin
   if Result then
   begin
     CollectAndDispatchTouchEvents;
+    HandleKeyboardInput;
     UpdateAndRenderEverything;
     Result := not Terminated;
   end;
