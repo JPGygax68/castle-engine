@@ -1,6 +1,5 @@
 {
-  Copyright 2004-2018 Michalis Kamburelis,
-  Copyright 2018 Jean-Pierre Gygax for this backend.
+  Copyright 2004-2018 Michalis Kamburelis, Jean-Pierre Gygax
 
   This file is part of "Castle Game Engine".
 
@@ -14,79 +13,7 @@
   ----------------------------------------------------------------------------
 }
 
-{
-  This is Castle Game Engine backend for DispmanX, i.e. for the Raspberry Pi
-  without X or Wayland.
-
-  THIS BACKEND IS EXPERIMENTAL!
-
-  Please report all questions and problems to:
-  Jean-Pierre Gygax <gygax@practicomp.ch> ("JPNotADragon" on the 
-  "castle-engine" Discord network).
-
-  To use this backend, define the preprocessor symbols 
-  CASTLE_ENGINE_RASPBERRY_PI and CASTLE_WINDOW_DISPMANX. You can do this in 
-  your personal Freepascal configuration file `~/.fpc.cfg`. For example:
-
-  ```
-    #include /etc/fpc.cfg
-
-    -dCASTLE_ENGINE_RASPBERRY_PI
-    -dCASTLE_WINDOW_DISPMANX
-    -Fl/opt/vc/lib/
-  ```
-
-  The first symbol is not actually related to the backend, but switches the
-  engine from OpenGL to OpenGL ES (version 2), which is necessary since
-  the Pi only supports the latter in hardware. The `-Fl' option tells
-  Freepascal where to find the Broadcom libraries (it is possible that this
-  search path is already defined globally in `/etc/fpc.cfg`).
-
-  What this backend does
-  ----------------------
-
-  This backend makes it possible to use the Castle Game Engine on the 
-  Raspberry Pi under Linux (tested with Raspbian) without X or Wayland.
-
-  This is possible because Broadcom (the manufacturer of the System-on-Chip)
-  provides a low-level graphics API called DispmanX, which, in cooperation
-  with several other Broadcom-provided libraries, makes it possible to
-  access the VideoCore 4 chip that is at the core of all the Pi's special
-  abilities, configure the connected display and then draw on it via GLESv2
-  (using EGL for housekeeping and presentation tasks).
-
-  For input, the DispmanX backend relies on the `/dev/input/eventX` files
-  provided by Linux. By listening to all of those device files, the backend 
-  gets informed about touchpad, mouse, and keyboard input (read about 
-  limitations under "Notes" below), which it translates and relays to the
-  engine as all backends do.
-
-  Notes and limitations:
-  ---------------------
-
-  - I have only ever used this backend on my FT5406 7" touch display (the
-    "official" display for the Raspberry Pi). It should work on other
-    displays - please test and report!
-
-  - Touch input is supposed to work, but wasn't formally tested and green-
-    lighted (the `draw_toy` example app does not seem to work correctly,
-    and we haven't yet established why that is).
-
-  - Mouse input has yet to be reviewed by the engine author. Currently,
-    the mouse pointer starts at the center of the screen, but is totally
-    unconstrained in all directions. This will most probably change soon.
-
-  - Keyboard input is somewhat limited in that, as is the case for all 
-    backends except GTK and Windows, it does not use keymaps, so that text 
-    input is in effect limited to US ASCII. (We have a couple of ideas on how 
-    to address this, so please inform us if that particular limitation is a 
-    concern to you).
-
-  - This backend does not currently take any of the configuration options
-    (such as multisampling) into account. (Though it does enable the maximum
-    level of multisampling available on the Pi, which is 4 - there's just no
-    way to change that right now.)
-}
+{ Wiki page: https://github.com/castle-engine/castle-engine/wiki/CastleWindow-DispmanX-backend }
 
 {$ifdef read_interface_uses}
 // The following two imports do not really belong in the interface part, but 
@@ -105,12 +32,12 @@ BaseUnix, CastleInternalLinuxEvents, CastleInternalLinuxUtils,
 
 {$ifdef read_window_interface}
 private
-  display: EGLDisplay;
-  surface: EGLSurface;
-  context: EGLContext;
-  config : EGLConfig;
-  native_window: EGL_DISPMANX_WINDOW_T;
-  dispman_display: DISPMANX_DISPLAY_HANDLE_T;
+  Display: EGLDisplay;
+  Surface: EGLSurface;
+  Context: EGLContext;
+  Config : EGLConfig;
+  NativeWindow: EGL_DISPMANX_WINDOW_T;
+  DispmanDisplay: DISPMANX_DISPLAY_HANDLE_T;
 
   procedure InitDispmanX;
   procedure CleanupDispmanX;
@@ -151,47 +78,45 @@ private
 
 procedure TCastleWindowCustom.InitDispmanX;
 var
-  dispman_element: DISPMANX_ELEMENT_HANDLE_T;
-  dispman_update: DISPMANX_UPDATE_HANDLE_T;
-  src_rect, dst_rect: VC_RECT_T;
+  Element: DISPMANX_ELEMENT_HANDLE_T;
+  Update: DISPMANX_UPDATE_HANDLE_T;
+  SrcRect, DstRect: VC_RECT_T;
 begin
 
-  //Application.InitDispmanX;
-
-  WritelnLog('CastleWindowCustom', 'Opening DispmanX display...');
-  dispman_display := vc_dispmanx_display_open(0 {LCD});
-  if dispman_display = 0 then raise Exception.Create('Failed to open dispmanx display');
+  WritelnLog('CastleWindowCustom', 'Opening DispmanX Display...');
+  DispmanDisplay := vc_dispmanx_display_open(0 {LCD});
+  if DispmanDisplay = 0 then raise Exception.Create('Failed to open dispmanx Display');
   WritelnLog('CastleWindowCustom', 'done.');
 
-  WritelnLog('CastleWindowCustom', 'Creating DispmanX window from display...');
-  dst_rect.x := 0;
-  dst_rect.y := 0;
-  dst_rect.width  := Application.ScreenWidth;
-  dst_rect.height := Application.ScreenHeight;
+  WritelnLog('CastleWindowCustom', 'Creating DispmanX window from Display...');
+  DstRect.x := 0;
+  DstRect.y := 0;
+  DstRect.width  := Application.ScreenWidth;
+  DstRect.height := Application.ScreenHeight;
   WritelnLog('CastleWindowCustom', 'screen size: %dx%d', [Application.ScreenWidth, Application.ScreenHeight]);
-  src_rect.x := 0;
-  src_rect.y := 0;
-  src_rect.width  := Application.ScreenWidth  shl 16;
-  src_rect.height := Application.ScreenHeight shl 16;
-  dispman_update := vc_dispmanx_update_start(0);
-  if dispman_update = 0 then raise Exception.Create('Failed to obtain update handle');
-  dispman_element := vc_dispmanx_element_add(dispman_update, dispman_display, 
-    0 {layer}, @dst_rect, 0 {source}, @src_rect, DISPMANX_PROTECTION_NONE, 
+  SrcRect.x := 0;
+  SrcRect.y := 0;
+  SrcRect.width  := Application.ScreenWidth  shl 16;
+  SrcRect.height := Application.ScreenHeight shl 16;
+  Update := vc_dispmanx_update_start(0);
+  if Update = 0 then raise Exception.Create('Failed to obtain update handle');
+  Element := vc_dispmanx_element_add(Update, DispmanDisplay, 
+    0 {layer}, @DstRect, 0 {source}, @SrcRect, DISPMANX_PROTECTION_NONE, 
     nil {alpha}, nil {clamp}, 0 {transform});
-  if dispman_element = 0 then raise Exception.Create('Failed to add Dispman element');
-  native_window.element := dispman_element;
-  native_window.width  := Application.ScreenWidth;
-  native_window.height := Application.ScreenHeight;
-  vc_dispmanx_update_submit_sync(dispman_update);
-  vc_dispmanx_element_remove(dispman_update, dispman_element);
+  if Element = 0 then raise Exception.Create('Failed to add Dispman element');
+  NativeWindow.element := Element;
+  NativeWindow.width  := Application.ScreenWidth;
+  NativeWindow.height := Application.ScreenHeight;
+  vc_dispmanx_update_submit_sync(Update);
+  vc_dispmanx_element_remove(Update, Element);
 
   WritelnLog('CastleWindowCustom', 'done.');
 end;
 
 procedure TCastleWindowCustom.CleanupDispmanX;
 begin
-  WritelnLog('CastleWindowCustom', 'Closing DispmanX display...');
-  if vc_dispmanx_display_close(dispman_display) <> 0 then WritelnWarning('TCastleWindowCustom', 'Error');
+  WritelnLog('CastleWindowCustom', 'Closing DispmanX Display...');
+  if vc_dispmanx_display_close(DispmanDisplay) <> 0 then WritelnWarning('TCastleWindowCustom', 'Error');
   WritelnLog('CastleWindowCustom', 'Done.');
 end;
 
@@ -217,43 +142,43 @@ const
 var
   Res: EGLboolean;
   Major, Minor: EGLint;
-  num_configs: EGLint;
-  {$ifndef NOT_DEFINED}
-  configs: array of EGLConfig;
+  NumConfigs: EGLint;
+  {$ifdef NOT_DEFINED}
+  Configs: array of EGLConfig;
   {$endif}
 begin
-  WritelnLog('TCastleWindowCustom', 'Obtaining EGL default display...');
-  display := eglGetDisplay(EGL_DEFAULT_DISPLAY);
-  if display = nil then raise Exception.Create('Failed to obtain EGL default display');
+  WritelnLog('TCastleWindowCustom', 'Obtaining EGL default Display...');
+  Display := eglGetDisplay(EGL_DEFAULT_DISPLAY);
+  if Display = nil then raise Exception.Create('Failed to obtain EGL default Display');
   WritelnLog('TCastleWindowCustom', 'done.');
 
   // eglQueryString() only return nil pointers
   {$ifdef NOT_DEFINED}
-  WritelnLog('TCastleWindowCustom', 'Dumping display information...');
-  WritelnLog('TCastleWindowCustom', 'APIs      : ' + StrPas(eglQueryString(display, EGL_CLIENT_APIS)));
-  WritelnLog('TCastleWindowCustom', 'Vendor    : ' + StrPas(eglQueryString(display, EGL_VENDOR)     ));
-  WritelnLog('TCastleWindowCustom', 'Version   : ' + StrPas(eglQueryString(display, EGL_VERSION)    ));
-  WritelnLog('TCastleWindowCustom', 'Extensions: ' + StrPas(eglQueryString(display, EGL_EXTENSIONS) ));
+  WritelnLog('TCastleWindowCustom', 'Dumping Display information...');
+  WritelnLog('TCastleWindowCustom', 'APIs      : ' + StrPas(eglQueryString(Display, EGL_CLIENT_APIS)));
+  WritelnLog('TCastleWindowCustom', 'Vendor    : ' + StrPas(eglQueryString(Display, EGL_VENDOR)     ));
+  WritelnLog('TCastleWindowCustom', 'Version   : ' + StrPas(eglQueryString(Display, EGL_VERSION)    ));
+  WritelnLog('TCastleWindowCustom', 'Extensions: ' + StrPas(eglQueryString(Display, EGL_EXTENSIONS) ));
   WritelnLog('TCastleWindowCustom', 'Display info dumped.');
   {$endif}
 
-  WritelnLog('TCastleWindowCustom', 'Initializing EGL display connection...');
-  Res := eglInitialize(display, @Major, @Minor);
-  if Res = EGL_FALSE then raise Exception.Create('Failed to initialize the EGL display');
+  WritelnLog('TCastleWindowCustom', 'Initializing EGL Display connection...');
+  Res := eglInitialize(Display, @Major, @Minor);
+  if Res = EGL_FALSE then raise Exception.Create('Failed to initialize the EGL Display');
   WritelnLog('TCastleWindowCustom', 'done, EGL version is %d.%d', [Major, Minor]);
 
   {$ifdef NOT_DEFINED}
-  WritelnLog('TCastleWindowCustom', 'Obtaining EGL display configs...');
-  eglGetConfigs(display, nil, 0, @num_configs);
-  // TODO: abort if num_configs = 0
-  SetLength(configs, num_configs);
-  eglGetConfigs(display, @configs, num_configs, @num_configs);
-  WritelnLog('TCastleWindowCustom', 'obtained %d configs', [num_configs]);
+  WritelnLog('TCastleWindowCustom', 'Obtaining EGL Display Configs...');
+  eglGetConfigs(Display, nil, 0, @NumConfigs);
+  // TODO: abort if NumConfigs = 0
+  SetLength(Configs, NumConfigs);
+  eglGetConfigs(Display, @Configs, NumConfigs, @NumConfigs);
+  WritelnLog('TCastleWindowCustom', 'obtained %d Configs', [NumConfigs]);
   {$endif}
 
-  WritelnLog('TCastleWindowCustom', 'Choosing a display config...');
-  Res := eglChooseConfig(display, @config_attribs, @config, 1, @num_configs);
-  if Res <> EGL_TRUE then raise Exception.Create('Failed to choose a display configuration');
+  WritelnLog('TCastleWindowCustom', 'Choosing a Display Config...');
+  Res := eglChooseConfig(Display, @config_attribs, @Config, 1, @NumConfigs);
+  if Res <> EGL_TRUE then raise Exception.Create('Failed to choose a Display configuration');
   WritelnLog('TCastleWindowCustom', 'done.');
 
   WritelnLog('TCastleWindowCustom', 'Binding the OpenGL ES API...');
@@ -261,9 +186,9 @@ begin
   if Res <> EGL_TRUE then raise Exception.Create('Failed to bind OpenGL ES API');
   WritelnLog('TCastleWindowCustom', 'done.');
 
-  WritelnLog('TCastleWindowCustom', 'Creating EGL context...');
-  context := eglCreateContext(display, config, EGL_NO_CONTEXT, @context_attribs);
-  if context = nil then raise Exception.Create('Failed to create EGL context');
+  WritelnLog('TCastleWindowCustom', 'Creating EGL Context...');
+  Context := eglCreateContext(Display, Config, EGL_NO_CONTEXT, @context_attribs);
+  if Context = nil then raise Exception.Create('Failed to create EGL Context');
   WritelnLog('TCastleWindowCustom', 'done.');
 end;
 
@@ -273,28 +198,37 @@ var
 begin
   WritelnLog('TCastleWindowCustom', 'Creating a Surface for the native Window...');
   // Note: egl.pas defines EGLNativeWindowType = Pointer
-  surface := eglCreateWindowSurface(display, config, @native_window, nil);
-  if surface = EGL_NO_SURFACE then raise Exception.Create('Failed to create Window Surface');
+  Surface := eglCreateWindowSurface(Display, Config, @NativeWindow, nil);
+  if Surface = EGL_NO_SURFACE then raise Exception.Create('Failed to create Window Surface');
   WritelnLog('TCastleWindowCustom', 'done.');
 
-  WritelnLog('TCastleWindowCustom', 'Connecting the rendering context to the Surface...');
-  Res := eglMakeCurrent(display, surface, surface, context);
-  if Res = EGL_FALSE then raise Exception.Create('Failed to connect the rendering context to the Surface');
+  WritelnLog('TCastleWindowCustom', 'Connecting the rendering Context to the Surface...');
+  Res := eglMakeCurrent(Display, Surface, Surface, Context);
+  if Res = EGL_FALSE then raise Exception.Create('Failed to connect the rendering Context to the Surface');
   WritelnLog('TCastleWindowCustom', 'done.');
 
-  // TODO: the following may not be useful, I just copied it from rasperf3d
-  eglSwapInterval(display, 0);  // no vsync
+  // TODO: make this dependent on TCastleWindow.VerticalSync if/when michalis decides to expose that
+  eglSwapInterval(Display, 1);  // 0 = no vsync, 1 = wait for next vsync, 2 = wait for next + 1, etc.
 end;
 
 procedure TCastleWindowCustom.CleanupEGL;
 begin
   WritelnLog('TCastleWindowCustom', 'Cleaning up EGL');
-  if (surface <> EGL_NO_SURFACE) and (eglDestroySurface(display, surface) <> 0) then
-    WritelnLog('TCastleWindowCustom', 'EGL surface destroyed ok');
-  if (context <> EGL_NO_CONTEXT) and (eglDestroyContext(display, context) <> 0) then
-    WritelnLog('TCastleWindowCustom', 'EGL context destroyed ok');
-  if (display <> EGL_NO_DISPLAY) and (eglTerminate(display) <> 0) then
-    WritelnLog('TCastleWindowCustom', 'EGL display terminated ok');
+  if (Surface <> EGL_NO_SURFACE) and (eglDestroySurface(Display, Surface) <> 0) then
+  begin
+    WritelnLog('TCastleWindowCustom', 'EGL Surface destroyed ok');
+    Surface := EGL_NO_SURFACE;
+  end;
+  if (Context <> EGL_NO_CONTEXT) and (eglDestroyContext(Display, Context) <> 0) then
+  begin
+    WritelnLog('TCastleWindowCustom', 'EGL Context destroyed ok');
+    Context := EGL_NO_CONTEXT;
+  end;
+  if (Display <> EGL_NO_DISPLAY) and (eglTerminate(Display) <> 0) then
+  begin
+    WritelnLog('TCastleWindowCustom', 'EGL Display terminated ok');
+    Display := EGL_NO_DISPLAY;
+  end;
 end;
 
 
@@ -319,7 +253,7 @@ end;
 procedure TCastleWindowCustom.MenuUpdateCaption(Entry: TMenuEntryWithCaption);
 begin
   { TODO (may do nothing if you do not care about displaying menu;
-    may do MenuFinalize + MenuInitialize if you display menu,
+    may do MenuFinalize + MenuInitialize if you Display menu,
     but don't care about updating it fast) }
   MenuFinalize;
   MenuInitialize;
@@ -328,7 +262,7 @@ end;
 procedure TCastleWindowCustom.MenuUpdateEnabled(Entry: TMenuEntryWithCaption);
 begin
   { TODO (may do nothing if you do not care about displaying menu;
-    may do MenuFinalize + MenuInitialize if you display menu,
+    may do MenuFinalize + MenuInitialize if you Display menu,
     but don't care about updating it fast) }
   MenuFinalize;
   MenuInitialize;
@@ -337,7 +271,7 @@ end;
 procedure TCastleWindowCustom.MenuUpdateChecked(Entry: TMenuItemChecked);
 begin
   { TODO (may do nothing if you do not care about displaying menu;
-    may do MenuFinalize + MenuInitialize if you display menu,
+    may do MenuFinalize + MenuInitialize if you Display menu,
     but don't care about updating it fast) }
   MenuFinalize;
   MenuInitialize;
@@ -352,7 +286,7 @@ procedure TCastleWindowCustom.MenuInsert(const Parent: TMenu;
   const ParentPosition: Integer; const Entry: TMenuEntry);
 begin
   { TODO (may do nothing if you do not care about displaying menu;
-    may do MenuFinalize + MenuInitialize if you display menu,
+    may do MenuFinalize + MenuInitialize if you Display menu,
     but don't care about updating it fast) }
   MenuFinalize;
   MenuInitialize;
@@ -362,7 +296,7 @@ procedure TCastleWindowCustom.MenuDelete(const Parent: TMenu;
   const ParentPosition: Integer; const Entry: TMenuEntry);
 begin
   { TODO (may do nothing if you do not care about displaying menu;
-    may do MenuFinalize + MenuInitialize if you display menu,
+    may do MenuFinalize + MenuInitialize if you Display menu,
     but don't care about updating it fast) }
   MenuFinalize;
   MenuInitialize;
@@ -393,7 +327,7 @@ end;
 
 procedure TCastleWindowCustom.CloseBackend;
 begin
-  { TODO (destroy OpenGL context, hide window; counterpart to OpenBackend) }
+  { TODO (destroy OpenGL Context, hide window; counterpart to OpenBackend) }
   WritelnLog('TCastleWindowCustom', 'CloseBackend');
   CleanupEGL;
 end;
@@ -409,7 +343,7 @@ begin
   Assert(not Closed);
   WritelnLog('CastleWindowCustom', 'BackendMakeCurrent');
   if eglMakeCurrent(Display, Surface, Surface, Context) = EGL_FALSE then
-    WritelnWarning('TCastleWindowCustom', 'Cannot make context current: ');
+    WritelnWarning('TCastleWindowCustom', 'Cannot make Context current: ');
 end;
 
 procedure TCastleWindowCustom.SetCursor(const Value: TMouseCursor);
@@ -453,7 +387,7 @@ end;
   Alternatively, you can include castlewindow_dialogs_by_messages.inc
   (outside of $ifdef read_implementation, usually at the beginning of
   castlewindow_xxx.inc file), to have simple dialog boxes drawn on
-  OpenGL context using our CastleMessages unit. }
+  OpenGL Context using our CastleMessages unit. }
 
 function TCastleWindowCustom.BackendFileDialog(const Title: string; var FileName: string;
   OpenDialog: boolean; FileFilters: TFileFilterList): boolean;
@@ -485,12 +419,11 @@ procedure TCastleApplication.InitDispmanX;
 var
   Success: Int32;
 begin
-  InitializeLog;
   BCMHostInit;
   WritelnLog('TCastleApplication', 'BCM host initialized.');
   Success := BCMHostGraphicsGetDisplaySize(0 {LCD}, FScreenWidth, FScreenHeight);
-  if Success < 0 then raise Exception.Create('Failed to obtain LCD display size'); // TODO: custom exception class ?
-  WritelnLog('TCastleApplication', 'LCD display size obtained: %dx%d', [FScreenWidth, FScreenHeight]);
+  if Success < 0 then raise Exception.Create('Failed to obtain LCD Display size'); // TODO: custom exception class ?
+  WritelnLog('TCastleApplication', 'LCD Display size obtained: %dx%d', [FScreenWidth, FScreenHeight]);
 end;
 
 procedure TCastleApplication.ShutdownDispmanX;
