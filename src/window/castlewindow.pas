@@ -3538,6 +3538,8 @@ var
   MatchingMI: TMenuItem;
   KeyRepeated: boolean;
 begin
+  WritelnLog('TCstleWindowCustom', 'DoKeyDown(%d, "%s")', [Key, StringKey]);
+
   {we need to create event beforehand to correctly convert StringKey to CharKey)}
   Event := InputKey(MousePosition, Key, StringKey, ModifiersDown(Container.Pressed));
 
@@ -3600,6 +3602,7 @@ procedure TCastleWindowCustom.DoMouseDown(const Position: TVector2;
 var
   Event: TInputPressRelease;
 begin
+  WritelnLog('TCastleWindowCustom', 'DoMouseDown((%n, %n), %d, %d)', [Position.X, Position.Y, Integer(Button), FingerIndex]);
   if FingerIndex = 0 then
   begin
     FMousePosition := Position;
@@ -3617,6 +3620,7 @@ procedure TCastleWindowCustom.DoMouseUp(const Position: TVector2;
 var
   Event: TInputPressRelease;
 begin
+  WritelnLog('TCastleWindowCustom', 'DoMouseUp((%n, %n), %d, %d)', [Position.X, Position.Y, Integer(Button), FingerIndex]);
   if FingerIndex = 0 then
   begin
     FMousePosition := Position;

@@ -28,7 +28,7 @@ DispmanX, VC4, // CastleGLES20,
 {$endif}
 
 {$ifdef read_implementation_uses}
-BaseUnix, LinuxEvents,
+BaseUnix, CastleLinuxEvents, CastleLinuxUtils,
 {$endif}
 
 {$ifdef read_window_interface}
@@ -62,6 +62,7 @@ private
   FInputFds: array of Longint;
   FTouchSlot: Integer;
   FMultiTouch: TMultiTouch;
+  FShiftState: TShiftState;
 
   procedure InitDispmanX;
   procedure ShutdownDispmanX;
@@ -455,6 +456,9 @@ begin
   FMultiTouch[0].CurrentPosition.X := ScreenWidth  / 2;
   FMultiTouch[0].CurrentPosition.Y := ScreenHeight / 2;
   FTouchSlot := -1;
+
+  // Keyboard
+  FShiftState := []; // TODO: obtain capslock, numlock states ?
 end;
 
 
@@ -564,12 +568,37 @@ procedure TCastleApplication.HandleInputEvents;
   end;
 
   procedure HandleKEY(var Event: TLinuxInputEvent);
+
+    procedure UpdateShiftState(State: TShiftState; Add: Boolean);
+    begin
+      if Add then
+        FShiftState := FShiftState + State
+      else
+        FShiftState := FShiftState - State;
+    end;
+
+  var
+    MyKey: TKey;
+    MyCharKey: char;
   begin
     //WritelnWarning('TCastleApplication', 'KEY event: code = %d, value = %d', [Event.code, Event.value]);
     case Event.Code of
       BTN_MOUSE..BTN_TASK: ReportMouseButton(Event.Code - BTN_MOUSE, Event.value <> 0);
-      else
-        WritelnWarning('TCastleApplication', 'Unhandled key: code = %d, value = %d', [Event.code, Event.value]);
+      else begin
+        KeyLinuxToCastle(Event.Code, FShiftState, MyKey, MyCharKey); // TODO: ShiftState!
+        if MyKey <> K_None then
+        begin
+          case MyKey of 
+            K_Shift: UpdateShiftState([ssShift], Event.value <> 0);
+            K_Alt  : UpdateShiftState([ssAlt  ], Event.value <> 0);
+            K_Ctrl : UpdateShiftState([ssCtrl ], Event.value <> 0);
+          end;
+          if Event.value <> 0 then
+            GuessedMainWindow.DoKeyDown(MyKey, MyCharKey)
+          else
+            GuessedMainWindow.DoKeyUp(MyKey);
+        end;
+      end;
     end;
   end;
 
