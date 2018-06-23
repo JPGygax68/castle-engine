@@ -1,4 +1,4 @@
-unit CastleLinuxUtils;
+unit CastleInternalLinuxUtils;
 
 interface
 
@@ -10,7 +10,7 @@ procedure KeyLinuxToCastle(const Key: Int32; const Shift: TShiftState;
 
 implementation
 
-uses CastleStringUtils, CastleLinuxEvents, CastleLog;
+uses CastleStringUtils, CastleInternalLinuxEvents, CastleLog;
 
 procedure KeyLinuxToCastle(const Key: Int32; const Shift: TShiftState;
   out MyKey: TKey; out MyCharKey: char);

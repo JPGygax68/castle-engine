@@ -31,7 +31,7 @@
   
  }
 
-unit DispmanX;
+unit CastleInternalDispmanX;
 
 {$mode objfpc} {Default to ObjFPC compatible syntax}
 {$H+}          {Default to AnsiString}

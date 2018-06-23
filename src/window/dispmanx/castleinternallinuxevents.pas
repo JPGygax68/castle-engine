@@ -1,4 +1,4 @@
-unit CastleLinuxEvents;
+unit CastleInternalLinuxEvents;
 
 interface
 

@@ -149,7 +149,7 @@ VideoCore IV
 {$H+}          {Default to AnsiString}
 {$inline on}   {Allow use of Inline procedures}
 
-unit VC4;
+unit CastleInternalVC4;
 
 interface
 

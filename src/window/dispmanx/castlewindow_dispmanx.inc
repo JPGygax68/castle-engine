@@ -1,5 +1,6 @@
 {
-  Copyright 2004-2018 Michalis Kamburelis.
+  Copyright 2004-2018 Michalis Kamburelis,
+  Copyright 2018 Jean-Pierre Gygax for this backend.
 
   This file is part of "Castle Game Engine".
 
@@ -17,7 +18,7 @@
   This is Castle Game Engine backend for DispmanX, i.e. for the Raspberry Pi
   without X or Wayland.
 
-  THIS BACK-END IS EXPERIMENTAL!
+  THIS BACKEND IS EXPERIMENTAL!
 
   Please report all questions and problems to:
   Jean-Pierre Gygax <gygax@practicomp.ch> ("JPNotADragon" on the 
@@ -50,7 +51,7 @@
   This is possible because Broadcom (the manufacturer of the System-on-Chip)
   provides a low-level graphics API called DispmanX, which, in cooperation
   with several other Broadcom-provided libraries, makes it possible to
-  access the VideoCore 4 chip that is a the core of all the Pi's special
+  access the VideoCore 4 chip that is at the core of all the Pi's special
   abilities, configure the connected display and then draw on it via GLESv2
   (using EGL for housekeeping and presentation tasks).
 
@@ -95,11 +96,11 @@
   pthreads,
   //cmem, // the c memory manager is on some systems much faster for multi-threading
 {$endif}
-DispmanX, VC4, // CastleGLES20,
+CastleInternalDispmanX, CastleInternalVC4,
 {$endif}
 
 {$ifdef read_implementation_uses}
-BaseUnix, CastleLinuxEvents, CastleLinuxUtils,
+BaseUnix, CastleInternalLinuxEvents, CastleInternalLinuxUtils,
 {$endif}
 
 {$ifdef read_window_interface}
@@ -607,7 +608,7 @@ procedure TCastleApplication.HandleInputEvents;
   procedure MultiTouchSetY(Y: Int32);
   begin
     if FTouchSlot < 0 then FTouchSlot := 0;
-    FMultiTouch[FTouchSlot].CurrentPosition.Y := FScreenHeight - Y;
+    FMultiTouch[FTouchSlot].CurrentPosition.Y := FScreenHeight - 1 - Y;
   end;
 
   procedure MultiTouchFingerUp;
