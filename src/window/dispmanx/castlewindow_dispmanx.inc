@@ -323,7 +323,8 @@ begin
 
   Application.OpenWindowsAdd(Self);
 
-  //FFullScreenBackend := true;
+  Assert(Application.MainWindow = nil);
+  Application.MainWindow := Self;
 end;
 
 procedure TCastleWindowCustom.CloseBackend;
@@ -438,7 +439,7 @@ end;
 procedure TCastleApplication.ShutdownDispmanX;
 begin
   BCMHostDeinit;
-  WritelnWarning('TCastleApplication_dispmanx.ShutdownDispmanX', 'BCM host deinitialized');
+  WritelnLog('TCastleApplication_dispmanx.ShutdownDispmanX', 'BCM host deinitialized');
 end;
 
 procedure TCastleApplication.OpenAllInputDevices; // TODO: better name
@@ -490,14 +491,12 @@ procedure TCastleApplication.HandleInputEvents;
 var  
   W: TCastleWindowCustom;
 
-  procedure ReportMouseButton(BtnNum: Integer; Down: Boolean);
+  procedure ReportMouseButton(Button: TMouseButton; Down: Boolean);
   var
     Position: TVector2;
-    Button: CastleKeysMouse.TMouseButton;
   begin
     //WritelnLog('TCastleApplication', 'ReportMouseButton(%d, %d)', [BtnNum, Down]);
     Position := FMultiTouch[0].CurrentPosition;
-    Button := TMouseButton(Integer(CastleKeysMouse.mbLeft) + BtnNum);
     if Down then
       W.DoMouseDown(Position, Button, 0)
     else
@@ -525,6 +524,8 @@ var
           begin
             //WritelnLog('TCastleApplication', 'MouseMotion: %f, %f -> %f, %f, finger %d', [LastPosition.X, LastPosition.Y, 
             //  CurrentPosition.X, CurrentPosition.Y, FTouchSlotNum]);
+            if W.MousePressed <> [mbLeft] then
+              WriteLnWarning ('Motion with touch input, but MousePressed is not [mbLeft]. This either indicates you have both mouse and touch input simultaneously, or we have a bug.');
             W.DoMotion(InputMotion(S^.LastPosition, S^.CurrentPosition, [CastleKeysMouse.mbLeft], FTouchSlotNum));
             S^.LastPosition := S^.CurrentPosition;
           end;
@@ -603,7 +604,14 @@ var
   begin
     //WritelnWarning('TCastleApplication', 'KEY event: code = %d, value = %d', [Event.code, Event.value]);
     case Event.Code of
-      BTN_MOUSE..BTN_TASK: ReportMouseButton(Event.Code - BTN_MOUSE, Event.value <> 0);
+      BTN_MOUSE  : ReportMouseButton(mbLeft  , Event.value <> 0);
+      BTN_RIGHT  : ReportMouseButton(mbRight , Event.value <> 0);
+      BTN_MIDDLE : ReportMouseButton(mbMiddle, Event.value <> 0);
+      BTN_SIDE   : ReportMouseButton(mbExtra1, Event.value <> 0);
+      BTN_EXTRA  : ReportMouseButton(mbExtra2, Event.value <> 0);
+      BTN_FORWARD: WritelnWarning('TCastleApplication', 'Linux mouse button BTN_FORWARD cannot be mapped to CGE button');
+      BTN_BACK   : WritelnWarning('TCastleApplication', 'Linux mouse button BTN_BACK cannot be mapped to CGE button');
+      BTN_TASK   : WritelnWarning('TCastleApplication', 'Linux mouse button BTN_TASK cannot be mapped to CGE button');
       else
       begin
         KeyLinuxToCastle(Event.Code, FShiftState, MyKey, MyCharKey); // TODO: ShiftState!

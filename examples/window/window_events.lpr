@@ -24,7 +24,8 @@ program window_events;
 
 uses SysUtils, CastleUtils, CastleGLUtils, CastleNotifications, CastleWindow,
   CastleKeysMouse, CastleStringUtils, CastleColors, Classes, CastleMessages,
-  CastleControls, CastleVectors, CastleRectangles;
+  CastleControls, CastleVectors, CastleRectangles,
+  CastleLog;
 
 var
   Window: TCastleWindowCustom;
@@ -103,10 +104,10 @@ begin
     'n': Notifications.Cursor := mcNone;
     'd': Notifications.Cursor := mcDefault;
     'w': Notifications.Cursor := mcWait;
-    '1': Window.MousePosition := Vector2(0           , 0);
-    '2': Window.MousePosition := Vector2(Window.Width, 0);
-    '3': Window.MousePosition := Vector2(Window.Width, Window.Height);
-    '4': Window.MousePosition := Vector2(0           , Window.Height);
+    '1': Window.MousePosition := Vector2(0               , 0);
+    '2': Window.MousePosition := Vector2(Window.Width    , 0);
+    '3': Window.MousePosition := Vector2(Window.Width    , Window.Height);
+    '4': Window.MousePosition := Vector2(0               , Window.Height);
     '5': Window.MousePosition := Vector2(Window.Width / 2, Window.Height / 2);
   end;
 
@@ -133,6 +134,8 @@ begin
 end;
 
 begin
+  //InitializeLog;
+
   Window := TCastleWindowCustom.Create(Application);
 
   Window.ParseParameters;
@@ -159,6 +162,8 @@ begin
   Notifications.MaxMessages := 15;
   Notifications.Timeout := 20000;
   Window.Controls.InsertFront(Notifications);
+
+  Application.MainWindow := Window;
 
   Window.OpenAndRun;
 end.
