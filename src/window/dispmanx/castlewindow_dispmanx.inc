@@ -614,7 +614,7 @@ var
       BTN_TASK   : WritelnWarning('TCastleApplication', 'Linux mouse button BTN_TASK cannot be mapped to CGE button');
       else
       begin
-        KeyLinuxToCastle(Event.Code, FShiftState, MyKey, MyCharKey); // TODO: ShiftState!
+        KeyLinuxToCastle(Event.Code, FShiftState, MyKey, MyCharKey);
         if MyKey <> K_None then
         begin
           case MyKey of 
@@ -714,8 +714,6 @@ end;
 
 procedure TCastleApplication.CreateBackend;
 begin
-  { TODO (initialize backend-specific stuff for the whole application;
-    may do nothing if you don't need anything) }
   InitDispmanX;
   OpenAllInputDevices;
 end;
@@ -724,8 +722,6 @@ procedure TCastleApplication.DestroyBackend;
 begin
   CloseAllInputDevices;
   ShutdownDispmanX;
-  // DoneKeyboard; NOTE: it may be better not to call this at all, in case the Keyboard unit
-  // is used somewhere else.
 end;
 
 function TCastleApplication.ProcessMessage(WaitForMessage, WaitToLimitFPS: boolean): boolean;
@@ -779,7 +775,7 @@ end;
 function TCastleApplication.BackendName: string;
 begin
   { TODO }
-  Result := 'CastleWindow Raspberry Pi (X-less) backend';
+  Result := 'CastleWindow DispmanX (Raspberry Pi without X) backend';
 end;
 
 { TCastleWindow -------------------------------------------------------------- }
