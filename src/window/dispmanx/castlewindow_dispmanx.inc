@@ -635,8 +635,10 @@ var
   begin
     WritelnLog('TCastleApplication', 'REL: code = %d, value = %d', [Event.code, Event.value]);
     case Event.Code of
-      REL_X             : FMultiTouch[0].CurrentPosition.X := FMultiTouch[0].CurrentPosition.X + Event.value;
-      REL_Y             : FMultiTouch[0].CurrentPosition.Y := FMultiTouch[0].CurrentPosition.Y + Event.value;
+      REL_X     : FMultiTouch[0].CurrentPosition.X := FMultiTouch[0].CurrentPosition.X + Event.value;
+      REL_Y     : FMultiTouch[0].CurrentPosition.Y := FMultiTouch[0].CurrentPosition.Y + Event.value;
+      REL_WHEEL : RequiredMainWindow.DoMouseWheel(Event.value, true);
+      REL_HWHEEL: RequiredMainWindow.DoMouseWheel(Event.value, false);
       else
         WritelnLog('TCastleApplication', 'Unhandled REL code: %d', [Event.Code]);
     end;
