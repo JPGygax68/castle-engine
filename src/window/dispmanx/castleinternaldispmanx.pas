@@ -39,7 +39,7 @@ unit CastleInternalDispmanX;
  
 interface
  
-uses {$ifdef ultibo}GlobalTypes,{$endif}SysUtils{$ifdef ultibo},Syscalls{$endif},VC4;
+uses {$ifdef ultibo}GlobalTypes,{$endif}SysUtils{$ifdef ultibo},Syscalls{$endif},CastleInternalVC4;
  
 {$PACKRECORDS C}
 
