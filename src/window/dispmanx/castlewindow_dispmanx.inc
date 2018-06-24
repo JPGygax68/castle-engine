@@ -65,6 +65,7 @@ private
 
   procedure InitDispmanX;
   procedure ShutdownDispmanX;
+  function  RequiredMainWindow: TCastleWindowCustom;
   procedure OpenAllInputDevices;
   procedure CloseAllInputDevices;
   procedure HandleInputEvents;
@@ -415,6 +416,14 @@ end;
 
 { DispmanX/Raspberry Pi specific methods }
 
+function TCastleApplication.RequiredMainWindow: TCastleWindowCustom;
+begin
+  if MainWindow <> nil then
+    Result := MainWindow
+  else
+    raise Exception.Create('For the DispmanX backend on Raspberry Pi, you have to assign Application.MainWindow');
+end;
+
 procedure TCastleApplication.InitDispmanX;
 var
   Success: Int32;
@@ -660,7 +669,7 @@ begin
     //WritelnLog('HandleInputEvents', 'input!');
     //Count := touch_file.Read(Buffer, SizeOf(Buffer));
   
-  W := GuessedMainWindow; // TODO: replace with code provided by michalis
+  W := RequiredMainWindow;
 
   // Read pending input from ALL input devices
   for i := 0 to High(FInputFds) do
