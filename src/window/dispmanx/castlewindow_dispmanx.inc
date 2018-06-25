@@ -48,7 +48,7 @@ private
 
 {$ifdef read_application_interface}
 type 
-  TTouchState = (tsInactive = 0, tsDown, tsUp, tsMotion);
+  TTouchState = (tsInactive = 0, tsDown = 1, tsUp = 2);
   TTouch = record
     State: TTouchState;
     LastPosition, CurrentPosition: TVector2;
@@ -59,12 +59,13 @@ private
   // TODO: support multiple screens!
   FScreenWidth, FScreenHeight: UInt32;
   FInputFds: array of Longint;
-  FTouchSlot: Integer;
+  FTouchSlotNum: Integer;
   FMultiTouch: TMultiTouch;
   FShiftState: TShiftState;
 
   procedure InitDispmanX;
   procedure ShutdownDispmanX;
+  function  RequiredMainWindow: TCastleWindowCustom;
   procedure OpenAllInputDevices;
   procedure CloseAllInputDevices;
   procedure HandleInputEvents;
@@ -322,7 +323,8 @@ begin
 
   Application.OpenWindowsAdd(Self);
 
-  //FFullScreenBackend := true;
+  Assert(Application.MainWindow = nil);
+  Application.MainWindow := Self;
 end;
 
 procedure TCastleWindowCustom.CloseBackend;
@@ -415,6 +417,14 @@ end;
 
 { DispmanX/Raspberry Pi specific methods }
 
+function TCastleApplication.RequiredMainWindow: TCastleWindowCustom;
+begin
+  if MainWindow <> nil then
+    Result := MainWindow
+  else
+    raise Exception.Create('For the DispmanX backend on Raspberry Pi, you have to assign Application.MainWindow');
+end;
+
 procedure TCastleApplication.InitDispmanX;
 var
   Success: Int32;
@@ -429,7 +439,7 @@ end;
 procedure TCastleApplication.ShutdownDispmanX;
 begin
   BCMHostDeinit;
-  WritelnWarning('TCastleApplication_dispmanx.ShutdownDispmanX', 'BCM host deinitialized');
+  WritelnLog('TCastleApplication_dispmanx.ShutdownDispmanX', 'BCM host deinitialized');
 end;
 
 procedure TCastleApplication.OpenAllInputDevices; // TODO: better name
@@ -460,7 +470,7 @@ begin
   // Special case: multi-touch "finger 0" is treated the same as the mouse (or mice)
   FMultiTouch[0].CurrentPosition.X := ScreenWidth  / 2;
   FMultiTouch[0].CurrentPosition.Y := ScreenHeight / 2;
-  FTouchSlot := -1;
+  FTouchSlotNum := -1;
 
   // Keyboard
   FShiftState := []; // TODO: obtain capslock, numlock states ?
@@ -477,77 +487,82 @@ begin
 end;
 
 procedure TCastleApplication.HandleInputEvents;
-  
-  procedure ReportMouseButton(BtnNum: Integer; Down: Boolean);
+
+var  
+  W: TCastleWindowCustom;
+
+  procedure ReportMouseButton(Button: TMouseButton; Down: Boolean);
   var
     Position: TVector2;
-    Button: CastleKeysMouse.TMouseButton;
   begin
+    //WritelnLog('TCastleApplication', 'ReportMouseButton(%d, %d)', [BtnNum, Down]);
     Position := FMultiTouch[0].CurrentPosition;
-    Button := TMouseButton(Integer(CastleKeysMouse.mbLeft) + BtnNum);
     if Down then
-      GuessedMainWindow.DoMouseDown(Position, Button, 0)
+      W.DoMouseDown(Position, Button, 0)
     else
-      GuessedMainWindow.DoMouseUp  (Position, Button, 0);
+      W.DoMouseUp  (Position, Button, 0);
   end;
 
   procedure ReportMultiTouch;
+  var
+    S: ^TTouch;
   begin
-    if FTouchSlot >= 0 then
+    if FTouchSlotNum >= 0 then
     begin
-      WritelnLog('TCastleApplication', 'ReportMultiTouch');
-      with FMultiTouch[FTouchSlot] do
-      begin
-        case State of
-          tsInactive: // "finger down" is implicit when first position is received
-            begin
-              LastPosition := CurrentPosition; // TODO: correct ? reporting same position twice
-              //WritelnLog('TCastleApplication', 'MouseDown: %f, %f, finger %d', [CurrentPosition.X, CurrentPosition.Y, FTouchSlot]);
-              GuessedMainWindow.DoMouseDown(CurrentPosition, CastleKeysMouse.mbLeft, FTouchSlot);
-              State := tsDown;
-              LastPosition := CurrentPosition;
-            end;
-          tsDown:
-            begin
-              //WritelnLog('TCastleApplication', 'MouseMotion: %f, %f -> %f, %f, finger %d', [LastPosition.X, LastPosition.Y, 
-              //  CurrentPosition.X, CurrentPosition.Y, FTouchSlot]);
-              GuessedMainWindow.DoMotion(InputMotion(LastPosition, CurrentPosition, [], FTouchSlot));
-              LastPosition := CurrentPosition;
-            end;
-          tsup: // "finger up" was registered via a tracking id of -1
-            begin
-              //WritelnLog('TCastleApplication', 'MouseUp: %f, %f, finger %d', [CurrentPosition.X, CurrentPosition.Y, FTouchSlot]);
-              GuessedMainWindow.DoMouseUp(CurrentPosition, CastleKeysMouse.mbLeft, FTouchSlot);
-              State := tsInactive;
-            end;
-        end;
+      WritelnLog('TCastleApplication', 'ReportMultiTouch, slot = %d', [FTouchSlotNum]);
+      S := @FMultiTouch[FTouchSlotNum];
+      case S^.State of
+        tsInactive: // "finger down" is implicit when first position is received
+          begin
+            S^.LastPosition := S^.CurrentPosition; // TODO: correct ? reporting same position twice
+            //WritelnLog('TCastleApplication', 'MouseDown: %f, %f, finger %d', [CurrentPosition.X, CurrentPosition.Y, FTouchSlotNum]);
+            W.DoMouseDown(S^.CurrentPosition, CastleKeysMouse.mbLeft, FTouchSlotNum);
+            S^.State := tsDown;
+            S^.LastPosition := S^.CurrentPosition;
+          end;
+        tsDown:
+          begin
+            //WritelnLog('TCastleApplication', 'MouseMotion: %f, %f -> %f, %f, finger %d', [LastPosition.X, LastPosition.Y, 
+            //  CurrentPosition.X, CurrentPosition.Y, FTouchSlotNum]);
+            if W.MousePressed <> [mbLeft] then
+              WriteLnWarning ('Motion with touch input, but MousePressed is not [mbLeft]. This either indicates you have both mouse and touch input simultaneously, or we have a bug.');
+            W.DoMotion(InputMotion(S^.LastPosition, S^.CurrentPosition, [CastleKeysMouse.mbLeft], FTouchSlotNum));
+            S^.LastPosition := S^.CurrentPosition;
+          end;
+        tsUp: // "finger up" was registered via a tracking id of -1
+          begin
+            //WritelnLog('TCastleApplication', 'MouseUp: %f, %f, finger %d', [CurrentPosition.X, CurrentPosition.Y, FTouchSlotNum]);
+            W.DoMouseUp(S^.CurrentPosition, CastleKeysMouse.mbLeft, FTouchSlotNum);
+            S^.State := tsInactive;
+          end;
       end;
-      FTouchSlot := -1;
+      FTouchSlotNum := -1;
     end;
   end;
 
   procedure MultiTouchSelectFinger(Slot: Longint);
   begin
-    if FTouchSlot >= 0 then ReportMultiTouch; // if another finger was selected, reporting on that finger is now complete
-    FTouchSlot := Slot;
+    if FTouchSlotNum >= 0 then ReportMultiTouch; // if another finger was selected, reporting on that finger is now complete
+    FTouchSlotNum := Slot;
   end;
 
   procedure MultiTouchSetX(X: Int32);
   begin
-    if FTouchSlot < 0 then FTouchSlot := 0;
-    FMultiTouch[FTouchSlot].CurrentPosition.X := X;
+    if FTouchSlotNum < 0 then FTouchSlotNum := 0;
+    FMultiTouch[FTouchSlotNum].CurrentPosition.X := X;
   end;
 
   procedure MultiTouchSetY(Y: Int32);
   begin
-    if FTouchSlot < 0 then FTouchSlot := 0;
-    FMultiTouch[FTouchSlot].CurrentPosition.Y := FScreenHeight - 1 - Y;
+    if FTouchSlotNum < 0 then FTouchSlotNum := 0;
+    FMultiTouch[FTouchSlotNum].CurrentPosition.Y := FScreenHeight - 1 - Y;
   end;
 
   procedure MultiTouchFingerUp;
   begin
-    if FTouchSlot < 0 then FTouchSlot := 0;
-    FMultiTouch[FTouchSlot].State := tsUp;
+    WritelnLog('TCastleApplication', 'MultiTouchFingerUp, slot = %d', [FTouchSlotNum]);
+    if FTouchSlotNum < 0 then FTouchSlotNum := 0;
+    FMultiTouch[FTouchSlotNum].State := tsUp;
   end;
 
   procedure ReportCompletedEvent;
@@ -558,6 +573,7 @@ procedure TCastleApplication.HandleInputEvents;
 
   procedure HandleABS(var Event: TLinuxInputEvent);
   begin
+    WritelnLog('TCastleApplication', 'ABS code: %d', [Event.Code]);
     case Event.Code of
       { ABS_X             : begin WritelnLog('TCastleApplication', 'ABS_X'); FMultiTouch[0].CurrentPosition.X := Event.value; end;
       ABS_Y             : FMultiTouch[0].CurrentPosition.Y := Event.value;
@@ -588,9 +604,17 @@ procedure TCastleApplication.HandleInputEvents;
   begin
     //WritelnWarning('TCastleApplication', 'KEY event: code = %d, value = %d', [Event.code, Event.value]);
     case Event.Code of
-      BTN_MOUSE..BTN_TASK: ReportMouseButton(Event.Code - BTN_MOUSE, Event.value <> 0);
-      else begin
-        KeyLinuxToCastle(Event.Code, FShiftState, MyKey, MyCharKey); // TODO: ShiftState!
+      BTN_MOUSE  : ReportMouseButton(mbLeft  , Event.value <> 0);
+      BTN_RIGHT  : ReportMouseButton(mbRight , Event.value <> 0);
+      BTN_MIDDLE : ReportMouseButton(mbMiddle, Event.value <> 0);
+      BTN_SIDE   : ReportMouseButton(mbExtra1, Event.value <> 0);
+      BTN_EXTRA  : ReportMouseButton(mbExtra2, Event.value <> 0);
+      BTN_FORWARD: WritelnWarning('TCastleApplication', 'Linux mouse button BTN_FORWARD cannot be mapped to CGE button');
+      BTN_BACK   : WritelnWarning('TCastleApplication', 'Linux mouse button BTN_BACK cannot be mapped to CGE button');
+      BTN_TASK   : WritelnWarning('TCastleApplication', 'Linux mouse button BTN_TASK cannot be mapped to CGE button');
+      else
+      begin
+        KeyLinuxToCastle(Event.Code, FShiftState, MyKey, MyCharKey);
         if MyKey <> K_None then
         begin
           case MyKey of 
@@ -599,9 +623,9 @@ procedure TCastleApplication.HandleInputEvents;
             K_Ctrl : UpdateShiftState([ssCtrl ], Event.value <> 0);
           end;
           if Event.value <> 0 then
-            GuessedMainWindow.DoKeyDown(MyKey, MyCharKey)
+            W.DoKeyDown(MyKey, MyCharKey)
           else
-            GuessedMainWindow.DoKeyUp(MyKey);
+            W.DoKeyUp(MyKey);
         end;
       end;
     end;
@@ -611,8 +635,10 @@ procedure TCastleApplication.HandleInputEvents;
   begin
     WritelnLog('TCastleApplication', 'REL: code = %d, value = %d', [Event.code, Event.value]);
     case Event.Code of
-      REL_X             : FMultiTouch[0].CurrentPosition.X := FMultiTouch[0].CurrentPosition.X + Event.value;
-      REL_Y             : FMultiTouch[0].CurrentPosition.Y := FMultiTouch[0].CurrentPosition.Y + Event.value;
+      REL_X     : FMultiTouch[0].CurrentPosition.X := FMultiTouch[0].CurrentPosition.X + Event.value;
+      REL_Y     : FMultiTouch[0].CurrentPosition.Y := FMultiTouch[0].CurrentPosition.Y + Event.value;
+      REL_WHEEL : RequiredMainWindow.DoMouseWheel(Event.value, true);
+      REL_HWHEEL: RequiredMainWindow.DoMouseWheel(Event.value, false);
       else
         WritelnLog('TCastleApplication', 'Unhandled REL code: %d', [Event.Code]);
     end;
@@ -621,18 +647,17 @@ procedure TCastleApplication.HandleInputEvents;
   procedure HandleMSC(var Event: TLinuxInputEvent);
   begin
     //WritelnLog('TCastleApplication', 'MSC: code = %d, value = %d', [Event.code, Event.value]);
-    case Event.Code of
-      9999: ;
-      else
+    //case Event.Code of
+    //  else
         WritelnLog('TCastleApplication', 'Unhandled MSC code: %d', [Event.Code]);
-    end;
+    //end;
   end;
 
   procedure HandleSYN(var Event: TLinuxInputEvent);
   begin
     case Event.Code of
       SYN_REPORT: ReportCompletedEvent;
-      SYN_MT_REPORT: WritelnLog('TCastleApplication', 'SYN_MT_REPORT !!');
+      SYN_MT_REPORT: WritelnLog('TCastleApplication', 'SYN_MT_REPORT received - this is deprecated and should not happen');
       // TODO: SYN_DROPPED
     end;
   end;
@@ -654,6 +679,8 @@ begin
     //WritelnLog('HandleInputEvents', 'input!');
     //Count := touch_file.Read(Buffer, SizeOf(Buffer));
   
+  W := RequiredMainWindow;
+
   // Read pending input from ALL input devices
   for i := 0 to High(FInputFds) do
   begin
@@ -687,8 +714,6 @@ end;
 
 procedure TCastleApplication.CreateBackend;
 begin
-  { TODO (initialize backend-specific stuff for the whole application;
-    may do nothing if you don't need anything) }
   InitDispmanX;
   OpenAllInputDevices;
 end;
@@ -697,8 +722,6 @@ procedure TCastleApplication.DestroyBackend;
 begin
   CloseAllInputDevices;
   ShutdownDispmanX;
-  // DoneKeyboard; NOTE: it may be better not to call this at all, in case the Keyboard unit
-  // is used somewhere else.
 end;
 
 function TCastleApplication.ProcessMessage(WaitForMessage, WaitToLimitFPS: boolean): boolean;
@@ -752,7 +775,7 @@ end;
 function TCastleApplication.BackendName: string;
 begin
   { TODO }
-  Result := 'CastleWindow Raspberry Pi (X-less) backend';
+  Result := 'CastleWindow DispmanX (Raspberry Pi without X) backend';
 end;
 
 { TCastleWindow -------------------------------------------------------------- }

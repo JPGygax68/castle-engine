@@ -3589,6 +3589,8 @@ end;
 
 procedure TCastleWindowCustom.DoMotion(const Event: TInputMotion);
 begin
+  // TODO: remove or make configurable via $define
+  WritelnLog('TCastleWindowCustom', 'DoMotion');
   MakeCurrent;
   Container.EventMotion(Event);
   if Event.FingerIndex = 0 then
@@ -3602,6 +3604,7 @@ procedure TCastleWindowCustom.DoMouseDown(const Position: TVector2;
 var
   Event: TInputPressRelease;
 begin
+  // TODO: remove or make configurable via $define
   WritelnLog('TCastleWindowCustom', 'DoMouseDown((%n, %n), %d, %d)', [Position.X, Position.Y, Integer(Button), FingerIndex]);
   if FingerIndex = 0 then
   begin
@@ -3620,6 +3623,7 @@ procedure TCastleWindowCustom.DoMouseUp(const Position: TVector2;
 var
   Event: TInputPressRelease;
 begin
+  // TODO: remove or make configurable via $define
   WritelnLog('TCastleWindowCustom', 'DoMouseUp((%n, %n), %d, %d)', [Position.X, Position.Y, Integer(Button), FingerIndex]);
   if FingerIndex = 0 then
   begin
