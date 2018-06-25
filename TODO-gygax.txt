@@ -1,0 +1,11 @@
+Mouse cursor for DispmanX backend (or general?)
+-----------------------------------------------
+
+(Excerpt from Discord)
+
+JPNotADragon:
+@michalis: do you have thoughts on how I could implement a mouse cursor, and how important that is for CGE?(edited)
+
+michalis:
+@JPNotADragon There is no native cursor display on DispmanX, right? I would do it using clean TUIControl instance to represent a cursor. Get some cursor images on compatible open-source licences (I suggest openclipart.org for public domain stuff). Place the images in src/window/dispmanx/images and convert to Pascal similar to how src/ui/opengl/gui-images are prepared. Then use TCastleImageControl to display this image, you can assign TCastleImageControl.Image and set OwnsImage to false. When window is created (this is a job for CreateBackend) create TCastleImageControl instance and add it to Controls. Set also TCastleImageControl.KeepOnTop. Then at every move update Anchor (hpLeft,...) and Anchor (vpBottom, ...) of this image from current mouse position. You will probably want to sum the mouse position with some shift depending on particular image, to make cursor arrow pointing precisely -- this could be done by just always adding this shift. (Note: better avoid using Left, Bottom, in far future they will be deprecated in favor of anchors.) Or it could be done by adding TCastleImageControl as child of TUIControlSizeable to apply the shift at different levels. Final touches: Remember that UI scaling requires you to use MousePosition.X/Control.UIScale instead of just MousePosition.X, same for Y. Remember to also update this image when SetCursor is called. I would prepare in CreateBackend multiple instances of TCastleImageControl, each for every possible cursor look (or empty for cursor=none). Then create TUIControlSizeable that has position synchronized as necessary, and always has one child showing current cursor look. Sorry for the wall of text -- I have this sketch of.implementation in my mind, but I write it on a phone:)
+A general manual about our UI classes is on https://castle-engine.io/manual_2d_user_interface.php :)
